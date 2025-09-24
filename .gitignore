@@ -1,0 +1,6 @@
+# pixi environments
+.pixi
+
+# data
+data/*
+.DS_Store
