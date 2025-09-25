@@ -4,7 +4,7 @@
 
 Catnip is a small Jupyter notebook for those obsessive lovers of a specific manga character with spare time and computing power.
 
-Input some manga pages, add some seeds, and rejoice.
+Input some manga pages, add some seeds, and rejoice at the sight of 40 previous of matches. I haven't implemented an actual method to export the files. Yet.
 
 ## Usage
 This is the very inefficient way in which I'm testing this. So far.
