@@ -1,7 +1,7 @@
 [workspace]
 authors = ["rifusaki <martinagmejia@gmail.com>"]
 channels = ["conda-forge"]
-name = "manga-char-finder"
+name = "catnip"
 platforms = ["osx-arm64"]
 version = "0.1.0"
 
