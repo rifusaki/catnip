@@ -6,21 +6,74 @@ from sklearn.neighbors import NearestNeighbors
 
 
 def build_model(IMG_SIZE, CROPS_DIR):
+    """
+    Build a feature extraction model using MobileNetV2 and compute embeddings for all crops.
+    
+    Architecture:
+    1. MobileNetV2 backbone (ImageNet pretrained) - removes top classification layers
+    2. Global Average Pooling - converts feature maps to single vector per image
+    3. Dense layer (256 neurons) - reduces dimensionality 
+    4. L2 normalization - ensures all embeddings have unit length for cosine similarity
+    
+    Args:
+        IMG_SIZE: Input image size (crops will be resized to IMG_SIZE x IMG_SIZE)
+        CROPS_DIR: Directory containing character crop images
+        
+    Returns:
+        embed_model: Trained embedding model for generating features
+    """
+    # Load MobileNetV2 pretrained on ImageNet, without top classification layers
+    # include_top=False: Remove final classification layers
+    # weights='imagenet': Use pretrained weights for better feature extraction
     base = tf.keras.applications.MobileNetV2(input_shape=(IMG_SIZE,IMG_SIZE,3), include_top=False, weights='imagenet')
+    
+    # Build custom head for embedding generation
     x = base.output
+    
+    # Global Average Pooling: Convert (H,W,C) feature maps to (C,) vector
+    # This creates a fixed-size representation regardless of input spatial dimensions
     x = layers.GlobalAveragePooling2D()(x)
+    
+    # Dense layer: Reduce to 256-dimensional embedding space
+    # activation=None: Linear activation for maximum expressiveness
     x = layers.Dense(256, activation=None)(x)
+    
+    # L2 normalization: Normalize embeddings to unit length
+    # This enables cosine similarity comparisons and stabilizes training
     x = layers.Lambda(lambda t: tf.math.l2_normalize(t, axis=1))(x)
+    
+    # Create the complete embedding model
     embed_model = models.Model(inputs=base.input, outputs=x)
 
+    # Load all crop images for embedding generation
     crop_paths = sorted(glob.glob(os.path.join(CROPS_DIR, '*.jpg')))
     print('Found', len(crop_paths), 'crops')
+    
     if len(crop_paths) > 0:
+        # Image preprocessing function
         def load_img(path, IMG_SIZE):
+            """
+            Load and preprocess image for embedding generation.
+            
+            Steps:
+            1. Load image and convert to RGB (removes alpha channel if present)
+            2. Resize to model input size using high-quality BICUBIC interpolation
+            3. Normalize pixel values to [0,1] range (neural network standard)
+            """
             img = Image.open(path).convert('RGB').resize((IMG_SIZE,IMG_SIZE), Image.BICUBIC)
             return np.asarray(img)/255.0
+        
+        # Batch process all crop images
+        # Stack creates (N, H, W, C) array where N = number of crops
         X = np.stack([load_img(p, IMG_SIZE) for p in crop_paths], axis=0)
+        
+        # Generate embeddings using the model
+        # batch_size=64: Process in batches to manage GPU memory
         embs = embed_model.predict(X, batch_size=64)
+        
+        # Save embeddings and corresponding file paths for later retrieval
+        # embeddings.npy: (N, 256) array of feature vectors
+        # crop_paths.json: List mapping array indices to file paths
         np.save('data/embeddings.npy', embs)
         with open('data/crop_paths.json', 'w') as f:
             json.dump(crop_paths, f)
@@ -28,37 +81,84 @@ def build_model(IMG_SIZE, CROPS_DIR):
         return embed_model
     else:
         print('No crops found.')
+        return None
 
 
 def char_nearest_neighbor(EMBED_PATH, CROP_PATH, IMG_SIZE, embed_model, seed_paths):
+    """
+    Find similar character crops using nearest neighbor search in embedding space.
+    
+    This function implements multi-seed similarity search:
+    1. Load precomputed embeddings database
+    2. Process seed images to create query embedding
+    3. Find most similar crops using cosine distance
+    4. Display results in a grid visualization
+    
+    Args:
+        EMBED_PATH: Path to saved embeddings (.npy file)
+        CROP_PATH: Path to saved crop paths (.json file) 
+        IMG_SIZE: Image size for preprocessing seed images
+        embed_model: Trained embedding model
+        seed_paths: List of paths to seed/example character images
+    """
+    # Load precomputed embeddings database
     embs = np.load('data/embeddings.npy')
     with open('data/crop_paths.json','r') as f:
         crop_paths = json.load(f)
 
+    # Initialize nearest neighbor search with cosine distance
+    # n_neighbors=50: Prepare to find up to 50 similar images
+    # metric='cosine': Use cosine similarity (1 - cosine_distance)
+    # Cosine similarity works well with L2-normalized embeddings
     nn = NearestNeighbors(n_neighbors=50, metric='cosine')
     nn.fit(embs)
 
     if len(seed_paths) > 0:
+        # Process seed images to create query embedding
+        # Multiple seeds allow for better character representation
         X_seed = np.stack([load_img(p, IMG_SIZE) for p in seed_paths], axis=0)
         seed_embs = embed_model.predict(X_seed, batch_size=8)
+        
+        # Average multiple seed embeddings for robust query representation
+        # This handles variations in pose, lighting, etc. across seed images
         query_vec = np.mean(seed_embs, axis=0, keepdims=True)  # average embedding
+        
+        # Re-normalize after averaging (maintains unit length property)
         query_vec = query_vec / np.linalg.norm(query_vec, axis=1, keepdims=True)
 
-        # Nearest neighbors
+        # Find nearest neighbors in embedding space
+        # Returns: distances (similarity scores) and indices into crop database
         dists, idxs = nn.kneighbors(query_vec, n_neighbors=40)
 
+        # Visualization: Display results in 5x8 grid
         plt.figure(figsize=(14, 10))
         for i, idx in enumerate(idxs[0]):
+            # Load and resize crop for display
             im = Image.open(crop_paths[idx]).convert('RGB')
             plt.subplot(5, 8, i+1)
             plt.imshow(im.resize((128,128)))
+            
+            # Show cosine distance as title (lower = more similar)
             plt.title(f"{dists[0,i]:.3f}")
             plt.axis('off')
         plt.show()
     else:
         print("Add paths of seeds.")
 
-# Multiple seeds
+# Multiple seeds - standalone image loading utility
 def load_img(path, size):
+    """
+    Utility function for loading and preprocessing individual images.
+    
+    Used by char_nearest_neighbor for processing seed images.
+    Identical to the nested function in build_model but available globally.
+    
+    Args:
+        path: Path to image file
+        size: Target size (will create size x size square image)
+        
+    Returns:
+        Normalized numpy array ready for model input
+    """
     img = Image.open(path).convert('RGB').resize((size,size), Image.BICUBIC)
     return np.asarray(img)/255.0
