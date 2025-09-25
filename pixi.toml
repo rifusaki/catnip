@@ -19,3 +19,6 @@ pytorch = ">=2.6.0,<3"
 torchvision = ">=0.21.0,<0.22"
 wget = ">=1.21.4,<2"
 opencv = "4.11.0.*"
+
+[pypi-dependencies]
+adenzu-manga-panel-extractor-src = { git = "https://github.com/avan06/adenzu-manga-panel-extractor-src.git", rev = "2d558eb" }
