@@ -87,24 +87,3 @@ Segment a page into panels using the built-in AI model.
   Strip background pixels from an image.  
 
 These are useful if you want to experiment with new segmentation pipelines.
-
----
-
-## Example Usage
-
-```python
-import cv2
-from adenzu_panel import panel
-
-# Load image with OpenCV
-image = cv2.imread("page.png")
-
-# Extract panels in memory
-panels = panel.generate_panel_blocks(image, rtl_order=True)
-
-for i, p in enumerate(panels):
-    cv2.imwrite(f"panel_{i}.png", p)
-
-# Or use AI-based detection
-ai_panels = panel.generate_panel_blocks_by_ai(image)
-```
