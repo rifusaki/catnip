@@ -1,7 +1,7 @@
 [workspace]
 authors = ["rifusaki <martinagmejia@gmail.com>"]
 channels = ["conda-forge"]
-name = "izutsumi-finder"
+name = "manga-char-finder"
 platforms = ["osx-arm64"]
 version = "0.1.0"
 
@@ -10,7 +10,6 @@ version = "0.1.0"
 [dependencies]
 numpy = ">=2.3.3,<3"
 tensorflow = ">=2.18.0,<3"
-opencv = ">=4.11.0,<5"
 pillow = ">=11.3.0,<12"
 ipykernel = ">=6.30.1,<7"
 scikit-learn = ">=1.7.2,<2"
@@ -19,3 +18,4 @@ ultralytics = ">=8.3.203,<9"
 pytorch = ">=2.6.0,<3"
 torchvision = ">=0.21.0,<0.22"
 wget = ">=1.21.4,<2"
+opencv = "4.11.0.*"
