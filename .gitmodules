@@ -1,0 +1,3 @@
+[submodule "Manga-Panel-Extractor"]
+	path = Manga-Panel-Extractor
+	url = https://github.com/adenzu/Manga-Panel-Extractor.git
