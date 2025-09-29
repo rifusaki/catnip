@@ -3,6 +3,7 @@ import numpy as np, os, json, glob, tensorflow as tf, matplotlib.pyplot as plt
 from tensorflow.keras import layers, models
 from PIL import Image
 from sklearn.neighbors import NearestNeighbors
+from src.config import settings
 
 
 def build_model(IMG_SIZE, CROPS_DIR):
@@ -27,61 +28,57 @@ def build_model(IMG_SIZE, CROPS_DIR):
     # weights='imagenet': Use pretrained weights for better feature extraction
     base = tf.keras.applications.MobileNetV2(input_shape=(IMG_SIZE,IMG_SIZE,3), include_top=False, weights='imagenet')
     
-    # Build custom head for embedding generation
+    # Custom head for embeddings
     x = base.output
-    
-    # Global Average Pooling: Convert (H,W,C) feature maps to (C,) vector
-    # This creates a fixed-size representation regardless of input spatial dimensions
     x = layers.GlobalAveragePooling2D()(x)
     
     # Dense layer: Reduce to 256-dimensional embedding space
-    # activation=None: Linear activation for maximum expressiveness
     x = layers.Dense(256, activation=None)(x)
     
-    # L2 normalization: Normalize embeddings to unit length
-    # This enables cosine similarity comparisons and stabilizes training
+    # L2 normalization: cosine similarity and training stabilization
     x = layers.Lambda(lambda t: tf.math.l2_normalize(t, axis=1))(x)
     
     # Create the complete embedding model
     embed_model = models.Model(inputs=base.input, outputs=x)
 
-    # Load all crop images for embedding generation
-    crop_paths = sorted(glob.glob(os.path.join(CROPS_DIR, '*.jpg')))
-    print('Found', len(crop_paths), 'crops')
-    
-    if len(crop_paths) > 0:
-        # Image preprocessing function
-        def load_img(path, IMG_SIZE):
-            """
-            Load and preprocess image for embedding generation.
-            
-            Steps:
-            1. Load image and convert to RGB (removes alpha channel if present)
-            2. Resize to model input size using high-quality BICUBIC interpolation
-            3. Normalize pixel values to [0,1] range (neural network standard)
-            """
-            img = Image.open(path).convert('RGB').resize((IMG_SIZE,IMG_SIZE), Image.BICUBIC)
-            return np.asarray(img)/255.0
-        
-        # Batch process all crop images
-        # Stack creates (N, H, W, C) array where N = number of crops
-        X = np.stack([load_img(p, IMG_SIZE) for p in crop_paths], axis=0)
-        
-        # Generate embeddings using the model
-        # batch_size=64: Process in batches to manage GPU memory
-        embs = embed_model.predict(X, batch_size=64)
-        
-        # Save embeddings and corresponding file paths for later retrieval
-        # embeddings.npy: (N, 256) array of feature vectors
-        # crop_paths.json: List mapping array indices to file paths
-        np.save('data/embeddings.npy', embs)
-        with open('data/crop_paths.json', 'w') as f:
-            json.dump(crop_paths, f)
-        print('Saved embeddings and paths')
-        return embed_model
-    else:
-        print('No crops found.')
+    # Collect crops recursively (supporting subdirectories)
+    crop_paths = sorted(
+        glob.glob(os.path.join(CROPS_DIR, "**", "*.jpg"), recursive=True)
+    )
+    print(f"Found {len(crop_paths)} crops under {CROPS_DIR}")
+
+    if len(crop_paths) == 0:
+        print("No crops found.")
         return None
+    
+    # Helper to load and preprocess an image
+    def load_img(path, IMG_SIZE):
+        """
+        Load and preprocess image for embedding generation.
+        
+        Steps:
+        1. Load image and convert to RGB (removes alpha channel if present)
+        2. Resize to model input size using high-quality BICUBIC interpolation
+        3. Normalize pixel values to [0,1] range (neural network standard)
+        """
+        img = Image.open(path).convert("RGB").resize((IMG_SIZE, IMG_SIZE), Image.BICUBIC)
+        return np.asarray(img) / 255.0
+    
+    # Preprocess all crops
+    X = np.stack([load_img(p, IMG_SIZE) for p in crop_paths], axis=0)
+
+    # Generate embeddings
+    embs = embed_model.predict(X, batch_size=64)
+
+    # Save embeddings + paths
+    np.save(settings.embed_path, embs)
+    with open(settings.crop_path, "w") as f:
+        json.dump(crop_paths, f)
+
+    print(f"Saved embeddings to {settings.embed_path}") # (N, 256) array of feature vectors
+    print(f"Saved crop paths to {settings.crop_path}") # List mapping array indices to file paths
+
+    return embed_model
 
 
 def char_nearest_neighbor(EMBED_PATH, CROP_PATH, IMG_SIZE, embed_model, seed_paths):
