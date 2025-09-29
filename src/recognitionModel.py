@@ -4,7 +4,78 @@ from tensorflow.keras import layers, models
 from PIL import Image
 from sklearn.neighbors import NearestNeighbors
 from src.config import settings
+from pathlib import Path
+from tqdm import tqdm
 
+
+def build_model_stream(IMG_SIZE: int, CROPS_DIR: str | os.PathLike):
+    """
+    Build embedding model and generate embeddings for crops in CROPS_DIR,
+    using a streaming approach to avoid memory overload.
+    """
+    # MobileNetV2 backbone
+    base = tf.keras.applications.MobileNetV2(
+        input_shape=(IMG_SIZE, IMG_SIZE, 3),
+        include_top=False,
+        weights="imagenet"
+    )
+    x = base.output
+    x = layers.GlobalAveragePooling2D()(x)
+    x = layers.Dense(256, activation=None)(x)
+    x = layers.Lambda(lambda t: tf.math.l2_normalize(t, axis=1))(x)
+
+    embed_model = models.Model(inputs=base.input, outputs=x)
+
+    # Gather crops recursively
+    exts = [".jpg", ".jpeg", ".png"]
+    crop_paths = [
+        str(p) for p in Path(CROPS_DIR).rglob("*")
+        if p.suffix.lower() in [".jpg", ".jpeg", ".png"]
+    ]
+    print(f"Found {len(crop_paths)} crops under {CROPS_DIR}")
+
+    if not crop_paths:
+        return None
+
+    # Generator: yields one image at a time
+    def gen():
+        for path in crop_paths:
+            img = Image.open(path).convert("RGB").resize((IMG_SIZE, IMG_SIZE), Image.BICUBIC)
+            yield np.asarray(img) / 255.0
+
+    X, valid_paths = [], []
+    for p in tqdm(crop_paths, desc="Loading crops"):
+        try:
+            arr = load_img(p, IMG_SIZE)
+            X.append(arr)
+            valid_paths.append(str(p))
+        except Exception as e:
+            print(f"Skipping {p}: {e}")
+    
+    X = np.stack(X, axis=0)
+    print(f"Successfully loaded {len(valid_paths)} crops")
+
+    # # Wrap generator in tf.data.Dataset for batching
+    # ds = tf.data.Dataset.from_generator(
+    #     gen,
+    #     output_signature=tf.TensorSpec(shape=(IMG_SIZE, IMG_SIZE, 3), dtype=tf.float32),
+    # ).batch(64)
+
+    # # Run embeddings without materializing the whole dataset
+    # embs = embed_model.predict(ds, verbose=1)
+
+    embs = embed_model.predict(X, batch_size=64, verbose=1)
+    print(f"Generated embeddings of shape {embs.shape}")
+
+    # Save
+    np.save(settings.embed_path, embs)
+    with open(settings.crop_path, "w") as f:
+        json.dump(crop_paths, f)
+
+    print(f"Saved embeddings to {settings.embed_path}")
+    print(f"Saved crop paths to {settings.crop_path}")
+
+    return embed_model
 
 def build_model(IMG_SIZE, CROPS_DIR):
     """
