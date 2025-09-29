@@ -1,6 +1,8 @@
 import cv2, os
 from pathlib import Path
 from ultralytics import YOLO
+from tqdm import tqdm
+from src.config import settings
 
 # Get relative path to YOLO model (Fuyucch1/yolov8_animeface)
 script_dir = Path(__file__).parent
@@ -109,3 +111,51 @@ def anime_extraction(panel_paths, CROPS_DIR, model=model):
             cv2.imwrite(outp, crop)
             count += 1
     print('Saved', count, 'anime face crops to', CROPS_DIR)
+
+def anime_extraction_recursive(model=model) -> int:
+    """
+    Extract anime/manga faces from all panels under settings.panels_dir (with subdir support).
+    Saves crops under settings.crops_dir, preserving subdirectory structure.
+
+    Args:
+        model: Pre-loaded YOLOv8 model for anime face detection.
+
+    Returns:
+        Total number of crops saved.
+    """
+    panel_root = settings.panels_dir
+    crops_root = settings.crops_dir
+
+    # Collect all panels recursively
+    panel_paths = sorted([
+        os.path.join(r, f)
+        for r, _, files in os.walk(panel_root)
+        for f in files
+        if f.lower().endswith((".jpg", ".jpeg", ".png"))
+    ])
+
+    count = 0
+    for p in tqdm(panel_paths, desc="Detecting faces in panels"):
+        results = model.predict(p, imgsz=512, conf=0.3, iou=0.5, verbose=False)
+        img = cv2.imread(p)
+
+        for i, box in enumerate(results[0].boxes.xyxy.cpu().numpy()):
+            x1, y1, x2, y2 = box.astype(int)
+            crop = img[y1:y2, x1:x2]
+            if crop.size == 0:
+                continue
+
+            outp = _make_crop_output_path(p, panel_root, crops_root, f"face_{i}")
+            os.makedirs(os.path.dirname(outp), exist_ok=True)
+            cv2.imwrite(outp, crop)
+            count += 1
+
+    print(f"Saved {count} anime face crops to {crops_root}")
+    return count
+
+def _make_crop_output_path(panel_path: str, panels_root, crops_root, suffix: str) -> str:
+    """Preserve subdirectory structure of panels inside crops_root."""
+    rel_path = os.path.relpath(panel_path, panels_root)   # e.g. "ch01/page1_0.jpg"
+    rel_root, ext = os.path.splitext(rel_path)
+    out_rel = f"{rel_root}_{suffix}{ext}"
+    return os.path.join(crops_root, out_rel)

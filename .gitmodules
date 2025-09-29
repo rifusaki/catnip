@@ -1,0 +1,3 @@
+[submodule "modules/coreMPE"]
+	path = modules/coreMPE
+	url = https://github.com/rifusaki/coreMPE.git
