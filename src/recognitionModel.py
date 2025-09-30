@@ -193,4 +193,4 @@ def load_img(path, size):
         Normalized numpy array ready for model input
     """
     img = Image.open(path).convert('RGB').resize((size,size), Image.Resampling.BICUBIC)
-    return np.asarray(img)/255.0
+    return np.asarray(img)/255.00
