@@ -21,8 +21,8 @@ def char_nearest_neighbor(EMBED_PATH, CROP_PATH, IMG_SIZE, embed_model, seed_pat
         similarity_threshold: Minimum cosine similarity (0-1, higher = more similar)
     """
     # Load precomputed embeddings database
-    embs = np.load('data/embeddings.npy')
-    with open('data/crop_paths.json','r') as f:
+    embs = np.load(EMBED_PATH)
+    with open(CROP_PATH, 'r') as f:
         crop_paths = json.load(f)
 
     if len(seed_paths) > 0:
