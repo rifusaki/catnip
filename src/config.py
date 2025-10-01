@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     embed_path: Path
     crop_path: Path
 
+    output_dir: Path
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

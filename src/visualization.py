@@ -1,8 +1,8 @@
-import numpy as np, json, matplotlib.pyplot as plt
+import numpy as np, json, matplotlib.pyplot as plt, shutil
 from PIL import Image
 from .embeddingModel import load_img
 
-def char_nearest_neighbor(EMBED_PATH, CROP_PATH, IMG_SIZE, embed_model, seed_paths, similarity_threshold=0.7):
+def izutsumi_query(EMBED_PATH, CROP_PATH, IMG_SIZE, embed_model, seed_paths, similarity_threshold=0.7):
     """
     Find similar character crops using similarity threshold in embedding space.
     
@@ -10,7 +10,6 @@ def char_nearest_neighbor(EMBED_PATH, CROP_PATH, IMG_SIZE, embed_model, seed_pat
     1. Load precomputed embeddings database
     2. Process seed images to create query embedding
     3. Find all crops above similarity threshold using cosine distance
-    4. Display results sorted by similarity score
     
     Args:
         EMBED_PATH: Path to saved embeddings (.npy file)
@@ -19,7 +18,13 @@ def char_nearest_neighbor(EMBED_PATH, CROP_PATH, IMG_SIZE, embed_model, seed_pat
         embed_model: Trained embedding model
         seed_paths: List of paths to seed/example character images
         similarity_threshold: Minimum cosine similarity (0-1, higher = more similar)
+
+    Returns: 
+        crop_paths
+        final_indices: iterate over crop_paths[final_indices] to locate crop
+        final_scores
     """
+    
     # Load precomputed embeddings database
     embs = np.load(EMBED_PATH)
     with open(CROP_PATH, 'r') as f:
@@ -55,43 +60,51 @@ def char_nearest_neighbor(EMBED_PATH, CROP_PATH, IMG_SIZE, embed_model, seed_pat
         
         if len(final_indices) == 0:
             print(f"No crops found above threshold {similarity_threshold}. Try lowering the threshold.")
-            return
+            return 0, 0, 0, 0
         
-        # Dynamic grid sizing based on number of results
-        n_results = len(final_indices)
-        if n_results <= 8:
-            rows, cols = 1, n_results
-            figsize = (2 * cols, 2)
-        elif n_results <= 16:
-            rows, cols = 2, 8
-            figsize = (16, 4)
-        elif n_results <= 40:
-            rows, cols = 5, 8
-            figsize = (16, 10)
-        else:
-            # Show top 40 results for display purposes
-            final_indices = final_indices[:40]
-            final_scores = final_scores[:40]
-            rows, cols = 5, 8
-            figsize = (16, 10)
-            print(f"Showing top 40 results out of {n_results} matches")
+    return crop_paths, final_indices, final_scores, similarity_threshold
 
-        # Visualization: Display results in grid
-        plt.figure(figsize=figsize)
-        for i, (idx, score) in enumerate(zip(final_indices, final_scores)):
-            # Load and resize crop for display
-            im = Image.open(crop_paths[idx]).convert('RGB')
-            plt.subplot(rows, cols, i+1)
-            plt.imshow(im.resize((128, 128)))
-            
-            # Show similarity score as title (higher = more similar)
-            plt.title(f"{score:.3f}")
-            plt.axis('off')
-        
-        plt.suptitle(f"Character matches above {similarity_threshold} similarity threshold", fontsize=14)
-        plt.tight_layout()
-        plt.show()
-        
-        return final_indices, final_scores
+
+def char_nearest_neighbor(crop_paths, final_indices, final_scores, similarity_threshold):
+    """
+    Display results sorted by similarity score in a grid
+    """
+    # Dynamic grid sizing based on number of results
+    n_results = len(final_indices)
+    if n_results <= 8:
+        rows, cols = 1, n_results
+        figsize = (2 * cols, 2)
+    elif n_results <= 16:
+        rows, cols = 2, 8
+        figsize = (16, 4)
+    elif n_results <= 40:
+        rows, cols = 5, 8
+        figsize = (16, 10)
     else:
-        print("Add paths of seeds.")
+        # Show top 40 results for display purposes
+        final_indices = final_indices[:40]
+        final_scores = final_scores[:40]
+        rows, cols = 5, 8
+        figsize = (16, 10)
+        print(f"Showing top 40 results out of {n_results} matches")
+
+    # Visualization: Display results in grid
+    plt.figure(figsize=figsize)
+    for i, (idx, score) in enumerate(zip(final_indices, final_scores)):
+        # Load and resize crop for display
+        im = Image.open(crop_paths[idx]).convert('RGB')
+        plt.subplot(rows, cols, i+1)
+        plt.imshow(im.resize((128, 128)))
+        
+        # Show similarity score as title (higher = more similar)
+        plt.title(f"{score:.3f}")
+        plt.axis('off')
+    
+    plt.suptitle(f"Character matches above {similarity_threshold} similarity threshold", fontsize=14)
+    plt.tight_layout()
+    plt.show()
+
+
+def save_similar_results(crop_paths, final_indices, OUTPUT_DIR):
+    for index in final_indices: 
+        shutil.copy(crop_paths[index], OUTPUT_DIR)
