@@ -18,8 +18,8 @@ def build_model(IMG_SIZE: int, CROPS_DIR: str | os.PathLike):
     Architecture:
     1. MobileNetV2 backbone (ImageNet pretrained) - removes top classification layers
     2. Global Average Pooling - converts feature maps to single vector per image
-    3. Dense layer (256 neurons) - reduces dimensionality 
-    4. L2 normalization - ensures all embeddings have unit length for cosine similarity
+    3. Dense layer - reduces dimensionality 
+    4. L2 normalization - all embeddings have unit length for cosine similarity
     
     Args:
         IMG_SIZE: Input image size (crops will be resized to IMG_SIZE x IMG_SIZE)
@@ -32,7 +32,8 @@ def build_model(IMG_SIZE: int, CROPS_DIR: str | os.PathLike):
     base = tf.keras.applications.MobileNetV2(
         input_shape=(IMG_SIZE, IMG_SIZE, 3),
         include_top=False,
-        weights="imagenet"
+        weights="imagenet",
+        classes=1000
     )
     x = base.output
     x = layers.GlobalAveragePooling2D()(x)
