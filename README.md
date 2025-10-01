@@ -17,8 +17,8 @@ This is the very inefficient way in which I'm testing this. So far.
 - Point to seeds (samples) directory, run the nearest neighbor algorithm and wait (again)
 
 ### Comments
-Adenzu's Panel Extractor algorithm is excellent but takes a long time to run, even without split-cell. [panelExtraction.py](src/panelExtraction.py) includes a faster albeit more basic and somewhat less accurate approach. The stripped-down version used here was packaged by [avan06](https://github.com/avan06/adenzu-manga-panel-extractor-src) and an AI-generated API doc is available in [this file](docs/api.md).
+Adenzu's Panel Extractor algorithm is excellent but takes a long time to run, even without split-cell. [panelExtraction.py](src/panelExtraction.py) includes a faster albeit more basic and somewhat less accurate approach.
 
 ### Credits
-- [adenzu/Manga-Panel-extractor](https://github.com/adenzu/Manga-Panel-Extractor) and its packaged version [avan06/adenzu-manga-panel-extractor-src](https://github.com/avan06/adenzu-manga-panel-extractor-src)
+- [adenzu/Manga-Panel-extractor](https://github.com/adenzu/Manga-Panel-Extractor)
 - [Fuyucch1/yolov8_animeface](https://github.com/Fuyucch1/yolov8_animeface/tree/main?tab=readme-ov-file)
