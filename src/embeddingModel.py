@@ -28,12 +28,11 @@ def build_model(IMG_SIZE: int, CROPS_DIR: str | os.PathLike, load_weights: bool 
     Returns:
         embed_model: Trained embedding model for generating features
     """
-    # MobileNetV2 backbone
+    # MobileNet backbone
     base = tf.keras.applications.MobileNetV2(
         input_shape=(IMG_SIZE, IMG_SIZE, 3),
         include_top=False,
         weights="imagenet",
-        classes=1000
     )
     x = base.output
     x = layers.GlobalAveragePooling2D()(x)
