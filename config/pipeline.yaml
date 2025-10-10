@@ -8,8 +8,7 @@ project:
 
 paths:
   # --- Input data ---
-  pages_dir: input_dir
-  curated_dataset_dir: data/curated_pages
+  pages_dir: data/input/input
   izutsumi_dir: data/input/izutsumi
   not_izutsumi_dir: data/input/notIzutsumi
 
