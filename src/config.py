@@ -6,7 +6,6 @@ class Paths(BaseModel):
     pages_dir: Path
     panels_dir: Path
     crops_dir: Path
-    curated_dataset_dir: Path
     izutsumi_dir: Path
     not_izutsumi_dir: Path
     embs_dir: Path
