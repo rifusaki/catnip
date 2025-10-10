@@ -6,7 +6,7 @@ def setup_dirs():
         if isinstance(path, Path):
             path.parent.mkdir(parents=True, exist_ok=True)
 
-    seed_paths = [str(p) for p in sorted(settings.izutsumi_dir.glob("*.jpg"))] # Seeds
-    neg_paths = [str(p) for p in sorted(settings.anti_izutsumi_dir.glob("*.jpg"))]
+    seed_paths = [str(p) for p in sorted(settings.paths.izutsumi_dir.glob("*.jpg"))] # Seeds
+    neg_paths = [str(p) for p in sorted(settings.paths.not_izutsumi_dir.glob("*.jpg"))]
 
     return seed_paths, neg_paths

@@ -6,7 +6,7 @@ from src.config import settings
 
 # Get relative path to YOLO model (Fuyucch1/yolov8_animeface)
 script_dir = Path(__file__).parent
-model_path = settings.model_dir / 'yolov8x6_animeface.pt'
+model_path = settings.paths.model_dir / 'yolov8x6_animeface.pt'
 model = YOLO(str(model_path))
 
 # Heuristic head detection
@@ -123,8 +123,8 @@ def anime_extraction_recursive(model=model) -> int:
     Returns:
         Total number of crops saved.
     """
-    panel_root = settings.panels_dir
-    crops_root = settings.crops_dir
+    panel_root = settings.paths.panels_dir
+    crops_root = settings.paths.crops_dir
 
     # Collect all panels recursively
     panel_paths = sorted([
