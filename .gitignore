@@ -6,7 +6,4 @@ data/*
 .DS_Store
 yolov8x6_animeface.pt
 __pycache__
-
-# Secrets
-.env
-.env
+src/models/*

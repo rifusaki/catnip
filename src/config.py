@@ -1,19 +1,41 @@
-from pydantic_settings import BaseSettings
 from pathlib import Path
+import yaml
+from pydantic import BaseModel
 
-class Settings(BaseSettings):
+class Paths(BaseModel):
     pages_dir: Path
     panels_dir: Path
     crops_dir: Path
-
     curated_dataset_dir: Path
     izutsumi_dir: Path
+    not_izutsumi_dir: Path
+    embs_dir: Path
+    crops_dir: Path
+    training_dir: Path
+    model_dir: Path
+    output_dir: Path
 
-    embed_path: Path
-    crop_path: Path
+class Params(BaseModel):
+    img_size: int
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+class Settings(BaseModel):
+    paths: Paths
+    params: Params
 
-settings = Settings()
+def load_settings(path: str | Path = "config/pipeline.yaml") -> Settings:
+    with open(path, "r") as f:
+        data = yaml.safe_load(f)
+    return Settings(**data)
+
+settings = load_settings()
+
+
+def setup_dirs():
+    for path in vars(settings).values():
+        if isinstance(path, Path):
+            path.parent.mkdir(parents=True, exist_ok=True)
+
+    izutsumi = [str(p) for p in sorted(settings.paths.izutsumi_dir.glob("*.jpg"))] # Seeds
+    notIzutsumi = [str(p) for p in sorted(settings.paths.not_izutsumi_dir.glob("*.jpg"))]
+
+    return izutsumi, notIzutsumi
