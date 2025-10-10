@@ -1,6 +1,6 @@
 import numpy as np, json, matplotlib.pyplot as plt, shutil
 from PIL import Image
-from .embeddingModel import load_img
+from ..recognition.embeddingModel import load_img
 
 
 def char_nearest_neighbor(crop_paths, final_indices, final_scores, similarity_threshold):

@@ -1,4 +1,4 @@
-path: data/work/izutsumiTraining
+path: data/processed/izutsumiTraining
 train: train/images
 val: val/images
 
