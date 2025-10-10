@@ -8,11 +8,14 @@ class Settings(BaseSettings):
 
     curated_dataset_dir: Path
     izutsumi_dir: Path
+    anti_izutsumi_dir: Path
 
     embed_path: Path
     crop_path: Path
 
     output_dir: Path
+
+    img_size: int
 
     class Config:
         env_file = ".env"
