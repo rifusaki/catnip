@@ -6,7 +6,7 @@ from src.config import settings
 
 # Get relative path to YOLO model (Fuyucch1/yolov8_animeface)
 script_dir = Path(__file__).parent
-model_path = script_dir / 'models' / 'yolov8x6_animeface.pt'
+model_path = settings.model_dir / 'yolov8x6_animeface.pt'
 model = YOLO(str(model_path))
 
 # Heuristic head detection

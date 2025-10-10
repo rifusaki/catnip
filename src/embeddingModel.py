@@ -101,7 +101,7 @@ def compute_embeddings(embed_model, CROPS_DIR: str | os.PathLike, IMG_SIZE: int)
         json.dump(valid_paths, f)
     
     # Save model weights for consistency across sessions
-    model_weights_path = settings.embed_path.parent / "model.weights.h5"
+    model_weights_path = settings.model_dir / "model.weights.h5"
     embed_model.save_weights(str(model_weights_path))
 
     print(f"Saved embeddings to {settings.embed_path}")

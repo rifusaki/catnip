@@ -12,6 +12,7 @@ class Settings(BaseSettings):
 
     embed_path: Path
     crop_path: Path
+    model_dir: Path
 
     output_dir: Path
 
