@@ -26,7 +26,7 @@ params:
   img_size: 128
   confidence_threshold: 0.5
   similarity_threshold: 0.7
-  device: "mps"  # or "cuda", "cpu"
+  device: "cpu"  # "mps", "cuda", "cpu"
 
 stages:
   extract_panels:

@@ -2,6 +2,5 @@ path: data/processed/izutsumiTraining
 train: train/images
 val: val/images
 
-names:
-  0: notIzutsumi
-  1: izutsumi
+nc: 2
+names: ['izutsumi', 'not izutsumi']

@@ -16,6 +16,7 @@ class Paths(BaseModel):
 
 class Params(BaseModel):
     img_size: int
+    device: str
 
 class Settings(BaseModel):
     paths: Paths

@@ -34,9 +34,9 @@ def prepare_data(izutsumiPaths, notIzutsumiPaths, out_dir = settings.paths.train
     iz_train, iz_val = split_data(izutsumiPaths)
     not_train, not_val = split_data(notIzutsumiPaths)
 
-    copy_and_label(out_dir, iz_train, "train", 1)
-    copy_and_label(out_dir, iz_val, "val", 1)
-    copy_and_label(out_dir, not_train, "train", 0)
-    copy_and_label(out_dir, not_val, "val", 0)
+    copy_and_label(out_dir, iz_train, "train", 0)
+    copy_and_label(out_dir, iz_val, "val", 0)
+    copy_and_label(out_dir, not_train, "train", 1)
+    copy_and_label(out_dir, not_val, "val", 1)
 
     print(f'Data prepared in {out_dir}')
