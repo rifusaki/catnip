@@ -10,15 +10,16 @@ paths:
   data: data/
   
   # --- Input ${paths.data} ---
-  pages_dir: ${paths.data}/input/input
-  izutsumi_dir: ${paths.data}/input/izutsumi
-  not_izutsumi_dir: ${paths.data}/input/notIzutsumi
+  pages_dir: ${paths.data}/input
+  izutsumi_dir: ${paths.data}/recognition/izutsumi
+  not_izutsumi_dir: ${paths.data}/recognition/notIzutsumi
 
   # --- Intermediate results ---
-  panels_dir: ${paths.data}/processed/panels
-  crops_dir: ${paths.data}/processed/crops
-  embs_dir: ${paths.data}/processed/embs
-  training_dir: ${paths.data}/processed/izutsumiTraining
+  panels_dir: ${paths.data}/preprocess/panels
+  crops_dir: ${paths.data}/preprocess/crops
+
+  embs_dir: ${paths.data}/recognition/embs
+  training_dir: ${paths.data}/recognition/izutsumiTraining
 
   # --- Models & outputs ---
   model_dir: ${paths.data}/models
