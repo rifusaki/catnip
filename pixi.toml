@@ -21,6 +21,7 @@ wget = ">=1.21.4,<2"
 opencv = ">=4.11.0,<5"
 pydantic = ">=2.11.9,<3"
 pydantic-settings = ">=2.11.0,<3"
+omegaconf = ">=2.3.0,<3"
 
 [pypi-dependencies]
 adenzu-manga-panel-extractor-src = { git = "https://github.com/avan06/adenzu-manga-panel-extractor-src.git", rev = "2d558eb" }
