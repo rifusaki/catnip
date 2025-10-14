@@ -55,8 +55,8 @@ stages:
   finetune_izutsumi:
     enabled: true
     pretrained_model: "${paths.model_dir}/yolov8x6_animeface.pt"
-    train_${paths.data}: "${paths.izutsumi_dir}"
-    val_${paths.data}: "${paths.anti_izutsumi_dir}"
+    train_data: "${paths.izutsumi_dir}"
+    val_data: "${paths.not_izutsumi_dir}"
     epochs: 30
     batch_size: 16
     lr: 1e-4
