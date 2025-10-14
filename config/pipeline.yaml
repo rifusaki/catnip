@@ -7,20 +7,22 @@ project:
   description: "Identify Izutsumi!"
 
 paths:
-  # --- Input data ---
-  pages_dir: data/input/input
-  izutsumi_dir: data/input/izutsumi
-  not_izutsumi_dir: data/input/notIzutsumi
+  data: data/
+  
+  # --- Input ${paths.data} ---
+  pages_dir: ${paths.data}/input/input
+  izutsumi_dir: ${paths.data}/input/izutsumi
+  not_izutsumi_dir: ${paths.data}/input/notIzutsumi
 
   # --- Intermediate results ---
-  panels_dir: data/processed/panels
-  crops_dir: data/processed/crops
-  embs_dir: data/processed/embs
-  training_dir: data/processed/izutsumiTraining
+  panels_dir: ${paths.data}/processed/panels
+  crops_dir: ${paths.data}/processed/crops
+  embs_dir: ${paths.data}/processed/embs
+  training_dir: ${paths.data}/processed/izutsumiTraining
 
   # --- Models & outputs ---
-  model_dir: data/models
-  output_dir: data/output
+  model_dir: ${paths.data}/models
+  output_dir: ${paths.data}/output
 
 params:
   img_size: 128
@@ -52,8 +54,8 @@ stages:
   finetune_izutsumi:
     enabled: true
     pretrained_model: "${paths.model_dir}/yolov8x6_animeface.pt"
-    train_data: "${paths.izutsumi_dir}"
-    val_data: "${paths.anti_izutsumi_dir}"
+    train_${paths.data}: "${paths.izutsumi_dir}"
+    val_${paths.data}: "${paths.anti_izutsumi_dir}"
     epochs: 30
     batch_size: 16
     lr: 1e-4

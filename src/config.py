@@ -3,6 +3,7 @@ import yaml
 from pydantic import BaseModel
 
 class Paths(BaseModel):
+    data: Path
     pages_dir: Path
     panels_dir: Path
     crops_dir: Path
