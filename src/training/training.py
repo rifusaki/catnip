@@ -1,8 +1,8 @@
 from src.config import settings
 from ultralytics import YOLO
 
-def build_model():
-    return YOLO(settings.paths.model_dir/'yolov8_izutsumi.pt')
+def build_model(path):
+    return YOLO(path)
 
 def train_model(model,
                 epochs=50, 
