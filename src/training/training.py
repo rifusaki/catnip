@@ -10,6 +10,7 @@ def train_model(model,
                 batch=16, 
                 lr0=1e-4, 
                 freeze=10,
+                device=settings.params.device,
                 workers=0,
                 resume=False):
     
@@ -25,7 +26,7 @@ def train_model(model,
         freeze=freeze,      # freeze backbone layers
         project="runs/izutsumi_finetune",
         name="exp1",
-        device=settings.params.device,
+        device=device,
         workers=workers,
         resume=resume
     )

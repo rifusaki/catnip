@@ -11,4 +11,3 @@ opencv-python>=4.11.0,<5
 pydantic>=2.11.9,<3
 pydantic-settings>=2.11.0,<3
 omegaconf>=2.3.0,<3
-git+https://github.com/avan06/adenzu-manga-panel-extractor-src.git@2d558eb
