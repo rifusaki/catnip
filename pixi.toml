@@ -24,3 +24,4 @@ omegaconf = ">=2.3.0,<3"
 
 [pypi-dependencies]
 adenzu-manga-panel-extractor-src = { git = "https://github.com/avan06/adenzu-manga-panel-extractor-src.git", rev = "2d558eb" }
+torchsummary = ">=1.5.1, <2"
