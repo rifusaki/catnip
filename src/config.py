@@ -17,8 +17,6 @@ class Paths(BaseModel):
 
 class Params(BaseModel):
     img_size: int
-    confidence_threshold: float | None = None
-    similarity_threshold: float | None = None
     device: str
 
 class Settings(BaseModel):
