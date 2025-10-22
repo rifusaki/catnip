@@ -10,8 +10,8 @@ def split_data(imgs, val_ratio=0.2):
 
 
 def copy_11(out_dir, imgs, split, class_id):
-    if class_id == 0: type = 'notIzutsumi'
-    elif class_id == 1: type = 'izutsumi'
+    if class_id == 0: type = 'izutsumi'
+    elif class_id == 1: type = 'notIzutsumi'
     (out_dir / split / type ).mkdir(parents=True, exist_ok=True)
     for img in imgs:
         dest_img = out_dir / split / type / img.name
