@@ -10,7 +10,7 @@ script_dir = Path(__file__).parent
 model_path = settings.paths.model_dir / 'yolov8x6_animeface.pt'
 model = YOLO(str(model_path))
 
-def anime_extraction_recursive(model=model, preserve_dirs=False, device='cpu') -> int:
+def anime_extraction_recursive(model=model, preserve_dirs=False, device='cpu', cache=False) -> int:
     """
     Extract anime/manga faces from all panels under settings.panels_dir (with subdir support).
     Saves crops under settings.crops_dir.
@@ -37,7 +37,7 @@ def anime_extraction_recursive(model=model, preserve_dirs=False, device='cpu') -
         # imgsz=512: Input image size for YOLO
         # conf=0.3: Confidence threshold (30% minimum confidence for detection)
         # iou=0.5: IoU threshold for Non-Maximum Suppression (removes overlapping boxes)
-        results = model.predict(p, imgsz=512, conf=0.3, iou=0.5, verbose=False, device=device)
+        results = model.predict(p, imgsz=512, conf=0.3, iou=0.5, verbose=False, device=device, cache=cache)
 
         img = cv2.imread(p)
 
