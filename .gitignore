@@ -7,3 +7,4 @@ data/*
 yolov8x6_animeface.pt
 __pycache__
 src/models/*
+runs/

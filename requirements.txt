@@ -1,0 +1,13 @@
+numpy>=2.3.3,<3
+tensorflow>=2.18.0,<3
+pillow>=11.3.0,<12
+ipykernel>=6.30.1,<7
+scikit-learn>=1.7.2,<2
+matplotlib>=3.10.6,<4
+ultralytics>=8.3.203,<9
+torch>=2.6.0,<3
+torchvision>=0.21.0,<0.22
+opencv-python>=4.11.0,<5
+pydantic>=2.11.9,<3
+pydantic-settings>=2.11.0,<3
+omegaconf>=2.3.0,<3

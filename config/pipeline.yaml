@@ -7,61 +7,24 @@ project:
   description: "Identify Izutsumi!"
 
 paths:
+  data: data/
+  
   # --- Input data ---
-  pages_dir: data/input/input
-  izutsumi_dir: data/input/izutsumi
-  not_izutsumi_dir: data/input/notIzutsumi
+  pages_dir: ${paths.data}/input
+  izutsumi_dir: ${paths.data}/recognition/izutsumi
+  not_izutsumi_dir: ${paths.data}/recognition/notIzutsumi
 
   # --- Intermediate results ---
-  panels_dir: data/processed/panels
-  crops_dir: data/processed/crops
-  embs_dir: data/processed/embs
-  training_dir: data/processed/izutsumiTraining
+  panels_dir: ${paths.data}/preprocess/panels
+  crops_dir: ${paths.data}/preprocess/crops
+
+  embs_dir: ${paths.data}/recognition/embs
+  training_dir: ${paths.data}/recognition/izutsumiTraining
 
   # --- Models & outputs ---
-  model_dir: data/models
-  output_dir: data/output
+  model_dir: ${paths.data}/models
+  output_dir: ${paths.data}/output
 
 params:
   img_size: 128
-  confidence_threshold: 0.5
-  similarity_threshold: 0.7
-  device: "mps"  # or "cuda", "cpu"
-
-stages:
-  extract_panels:
-    enabled: true
-    model: "manga_panel_detector.pt"
-    save_dir: "${paths.panels_dir}"
-    resize: [1024, 1024]
-
-  crop_faces:
-    enabled: true
-    model: "${paths.model_dir}/yolov8x6_animeface.pt"
-    source_dir: "${paths.panels_dir}"
-    save_dir: "${paths.crops_dir}"
-    conf: 0.5
-
-  generate_embeddings:
-    enabled: true
-    backbone: "mobilenet_v2"
-    save_path: "${paths.embs_dir}/embeddings.npy"
-    crop_map_path: "${paths.embs_dir}/crop_paths.json"
-    img_size: "${params.img_size}"
-
-  finetune_izutsumi:
-    enabled: true
-    pretrained_model: "${paths.model_dir}/yolov8x6_animeface.pt"
-    train_data: "${paths.izutsumi_dir}"
-    val_data: "${paths.anti_izutsumi_dir}"
-    epochs: 30
-    batch_size: 16
-    lr: 1e-4
-    save_dir: "${paths.training_dir}"
-
-  evaluate:
-    enabled: true
-    model: "${paths.training_dir}/best.pt"
-    test_dir: "${paths.crops_dir}"
-    threshold: "${params.similarity_threshold}"
-    output_dir: "${paths.output_dir}"
+  device: "cpu"  # "mps", "cuda", "cpu"

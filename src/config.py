@@ -1,31 +1,37 @@
 from pathlib import Path
-import yaml
+from omegaconf import OmegaConf
 from pydantic import BaseModel
+from typing import Any
 
 class Paths(BaseModel):
+    data: Path
     pages_dir: Path
     panels_dir: Path
     crops_dir: Path
-    curated_dataset_dir: Path
     izutsumi_dir: Path
     not_izutsumi_dir: Path
     embs_dir: Path
-    crops_dir: Path
     training_dir: Path
     model_dir: Path
     output_dir: Path
 
 class Params(BaseModel):
     img_size: int
+    device: str
 
 class Settings(BaseModel):
     paths: Paths
     params: Params
 
+
 def load_settings(path: str | Path = "config/pipeline.yaml") -> Settings:
-    with open(path, "r") as f:
-        data = yaml.safe_load(f)
-    return Settings(**data)
+    root = Path.cwd()
+    config_path = root / path
+    cfg = OmegaConf.load(config_path)
+    
+    # resolve all ${...} interpolations
+    resolved = OmegaConf.to_container(cfg, resolve=True)
+    return Settings(**resolved)
 
 settings = load_settings()
 
