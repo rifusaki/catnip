@@ -23,6 +23,7 @@ def anime_extraction_recursive(model=model, preserve_dirs=False, device='cpu', c
     """
     panel_root = settings.paths.panels_dir
     crops_root = settings.paths.crops_dir
+    Path(crops_root).mkdir(exist_ok=True)
 
     # Collect all panels recursively
     panel_paths = sorted([
@@ -52,7 +53,7 @@ def anime_extraction_recursive(model=model, preserve_dirs=False, device='cpu', c
                 os.makedirs(os.path.dirname(outp), exist_ok=True)
                 cv2.imwrite(outp, crop)
             else:
-                outp = os.path.join(crops_root, f"{panel_root}_crop_{i}.jpg")
+                outp = os.path.join(crops_root, f"crop_{i}.jpg")
                 cv2.imwrite(outp, crop)
 
             count += 1
