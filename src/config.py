@@ -5,13 +5,20 @@ from typing import Any
 
 class Paths(BaseModel):
     data: Path
-    pages_dir: Path
-    panels_dir: Path
-    crops_dir: Path
-    izutsumi_dir: Path
-    not_izutsumi_dir: Path
-    embs_dir: Path
-    training_dir: Path
+    
+    # Training paths (GCS/Colab)
+    manga_dir: Path | None = None
+    annotations_dir: Path | None = None
+    
+    # Inference/Processing paths
+    pages_dir: Path | None = None
+    panels_dir: Path | None = None
+    crops_dir: Path | None = None
+    izutsumi_dir: Path | None = None
+    not_izutsumi_dir: Path | None = None
+    embs_dir: Path | None = None
+    training_dir: Path | None = None
+    
     model_dir: Path
     output_dir: Path
 

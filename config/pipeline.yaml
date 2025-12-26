@@ -9,7 +9,11 @@ project:
 paths:
   data: data/
   
-  # --- Input data ---
+  # --- Training Data ---
+  manga_dir: ${paths.data}/manga
+  annotations_dir: ${paths.data}/annotations
+
+  # --- Input data (Legacy) ---
   pages_dir: ${paths.data}/input
   izutsumi_dir: ${paths.data}/recognition/izutsumi
   not_izutsumi_dir: ${paths.data}/recognition/notIzutsumi
