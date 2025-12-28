@@ -1,4 +1,7 @@
 import numpy as np, json, matplotlib.pyplot as plt, shutil
+import cv2
+import os
+from pathlib import Path
 from PIL import Image
 from ..recognition.embeddingModel import load_img
 
@@ -61,5 +64,54 @@ def save_similar_results(crop_paths, final_indices, OUTPUT_DIR, final_scores=Non
             warnings.warn("final_scores provided but length mismatch, saving with original filenames.")
         for index in final_indices:
             shutil.copy(crop_paths[index], OUTPUT_DIR)
+
+def save_inference_results(results_generator, output_dir, inference_source):
+    """
+    Process YOLO inference results generator, flatten paths, and save images/labels.
+    
+    Args:
+        results_generator: Generator returned by model.predict()
+        output_dir: Directory to save results
+        inference_source: Source directory used for inference (to calculate relative paths)
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    inference_source = Path(inference_source)
+    
+    print(f"Saving flattened results to {output_dir}")
+    
+    for r in results_generator:
+        # Calculate flattened filename
+        original_path = Path(r.path)
+        try:
+            rel_path = original_path.relative_to(inference_source)
+            # Replace path separators with underscores
+            # e.g. v01/001.jpg -> v01_001.jpg
+            flat_name = str(rel_path).replace(os.sep, "_")
+        except ValueError:
+            # Fallback if path is not relative
+            flat_name = original_path.name
+
+        # Paths for saving
+        save_img_path = output_dir / flat_name
+        save_txt_path = save_img_path.with_suffix(".txt")
+
+        # Save Image with Detections
+        # r.plot() returns the image as a numpy array (BGR)
+        im_array = r.plot() 
+        cv2.imwrite(str(save_img_path), im_array)
+
+        # Save Labels if detections exist
+        if len(r.boxes) > 0:
+            with open(save_txt_path, "w") as f:
+                for box in r.boxes:
+                    # box.cls is a tensor, get item
+                    cls = int(box.cls[0].item())
+                    # box.xywhn is a tensor, get list
+                    x, y, w, h = box.xywhn[0].tolist()
+                    f.write(f"{cls} {x:.6f} {y:.6f} {w:.6f} {h:.6f}\n")
+    
+    print("Inference results saved.")
+
 
 
