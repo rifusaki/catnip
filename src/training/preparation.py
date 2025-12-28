@@ -64,8 +64,12 @@ def safe_symlink(target, link_name):
     """
     Creates a symlink from link_name to target safely.
     """
-    target = Path(target)
+    target = Path(target).resolve()
     link_name = Path(link_name)
+    
+    if link_name.is_symlink():
+        os.unlink(link_name)
+
     if not link_name.exists():
         try:
             os.symlink(target, link_name)

@@ -21,7 +21,13 @@ def convert_label_studio_to_yolo(json_path, output_dir, class_map):
     for task in tasks:
         # 1. Extract relative path from URL
         # URL format: gs://catnip-data/manga/v09/0001.jpg
-        url = task['data']['url']
+        data_dict = task['data']
+        url = data_dict.get('url') or data_dict.get('image')
+        
+        if not url:
+             print(f"Skipping task {task.get('id')}: No 'url' or 'image' found in data.")
+             continue
+
         if "manga/" in url:
             # Extract everything after 'manga/'
             rel_path = url.split("manga/")[-1]
