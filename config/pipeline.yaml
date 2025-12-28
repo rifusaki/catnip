@@ -30,5 +30,5 @@ paths:
   output_dir: ${paths.data}/output
 
 params:
-  img_size: 128
+  img_size: 640
   device: "cpu"  # "mps", "cuda", "cpu"
