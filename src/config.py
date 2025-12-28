@@ -21,6 +21,7 @@ class Paths(BaseModel):
     
     model_dir: Path
     output_dir: Path
+    runs_dir: Path
 
 class Params(BaseModel):
     img_size: int

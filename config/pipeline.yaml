@@ -7,27 +7,16 @@ project:
   description: "Identify Izutsumi!"
 
 paths:
-  data: data/
+  data: catnip-data/
   
   # --- Training Data ---
-  manga_dir: ${paths.data}/manga
-  annotations_dir: ${paths.data}/annotations
-
-  # --- Input data (Legacy) ---
-  pages_dir: ${paths.data}/input
-  izutsumi_dir: ${paths.data}/recognition/izutsumi
-  not_izutsumi_dir: ${paths.data}/recognition/notIzutsumi
-
-  # --- Intermediate results ---
-  panels_dir: ${paths.data}/preprocess/panels
-  crops_dir: ${paths.data}/preprocess/crops
-
-  embs_dir: ${paths.data}/recognition/embs
-  training_dir: ${paths.data}/recognition/izutsumiTraining
+  manga_dir: ${paths.data}/data/manga
+  annotations_dir: ${paths.data}/data/annotations
 
   # --- Models & outputs ---
   model_dir: ${paths.data}/models
-  output_dir: ${paths.data}/output
+  runs_dir: ${paths.data}/runs
+  output_dir: ${paths.data}/results
 
 params:
   img_size: 640

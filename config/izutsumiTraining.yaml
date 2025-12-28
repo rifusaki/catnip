@@ -1,6 +1,0 @@
-path: data/recognition/izutsumiTraining
-train: train/images
-val: val/images
-
-nc: 2
-names: ['izutsumi', 'not izutsumi']
