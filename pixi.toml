@@ -5,6 +5,9 @@ name = "catnip"
 platforms = ["osx-arm64", "linux-64"]
 version = "0.1.0"
 
+[pypi-options]
+extra-index-urls = ["https://download.pytorch.org/whl/xpu"]
+
 [tasks]
 
 [dependencies]
@@ -14,8 +17,6 @@ ipykernel = ">=6.30.1,<7"
 scikit-learn = ">=1.7.2,<2"
 matplotlib = ">=3.10.6,<4"
 ultralytics = ">=8.3.203,<9"
-pytorch = ">=2.1.0,<2.5"
-torchvision = ">=0.16,<0.20"
 pydantic = ">=2.11.9,<3"
 pydantic-settings = ">=2.11.0,<3"
 omegaconf = ">=2.3.0,<3"
@@ -26,5 +27,14 @@ torchsummary = ">=1.5.1, <2"
 opencv-python = ">=4.10.0,<5"
 
 [target.linux-64.pypi-dependencies]
-intel-extension-for-pytorch = ">=2.1.0,<2.5"
+# Install PyTorch with XPU support - IPEX is no longer needed for PyTorch 2.6+
+# as Intel XPU support is now integrated into PyTorch itself
+torch = "==2.6.0+xpu"
+torchvision = "==0.21.0+xpu"
+torchaudio = "==2.6.0+xpu"
+
+[target.osx-arm64.dependencies]
+# macOS uses conda PyTorch (no Intel XPU)
+pytorch = ">=2.1.0,<2.6"
+torchvision = ">=0.16,<0.21"
 
