@@ -1,21 +1,21 @@
 [workspace]
 authors = ["rifusaki <martinagmejia@gmail.com>"]
-channels = ["conda-forge"]
+channels = ["conda-forge", "pytorch"]
 name = "catnip"
-platforms = ["osx-arm64", "win-64"]
+platforms = ["osx-arm64", "linux-64"]
 version = "0.1.0"
 
 [tasks]
 
 [dependencies]
-numpy = ">=2.3.3,<3"
+python = "3.11.*"
+numpy = "<2"
 ipykernel = ">=6.30.1,<7"
 scikit-learn = ">=1.7.2,<2"
 matplotlib = ">=3.10.6,<4"
 ultralytics = ">=8.3.203,<9"
-pytorch = ">=2.6.0,<3"
-torchvision = ">=0.21.0,<0.22"
-opencv = ">=4.11.0,<5"
+pytorch = ">=2.1.0,<2.5"
+torchvision = ">=0.16,<0.20"
 pydantic = ">=2.11.9,<3"
 pydantic-settings = ">=2.11.0,<3"
 omegaconf = ">=2.3.0,<3"
@@ -23,3 +23,8 @@ omegaconf = ">=2.3.0,<3"
 [pypi-dependencies]
 adenzu-manga-panel-extractor-src = { git = "https://github.com/avan06/adenzu-manga-panel-extractor-src.git", rev = "2d558eb" }
 torchsummary = ">=1.5.1, <2"
+opencv-python = ">=4.10.0,<5"
+
+[target.linux-64.pypi-dependencies]
+intel-extension-for-pytorch = ">=2.1.0,<2.5"
+
