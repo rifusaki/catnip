@@ -12,6 +12,7 @@ paths:
   # --- Training Data ---
   manga_dir: ${paths.data}/data/manga
   annotations_dir: ${paths.data}/data/annotations
+  ls_exports_dir: ${paths.data}/data/ls-exports
 
   # --- Models & outputs ---
   model_dir: ${paths.data}/models

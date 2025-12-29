@@ -33,31 +33,31 @@ def copy_and_label_v8(out_dir, imgs, split, class_id):
             f.write(f"{class_id} 0.5 0.5 1.0 1.0\n")
 
 
-def prepare_data(izutsumiPaths, notIzutsumiPaths, out_dir = settings.paths.training_dir, version = 0):
-    # create YOLO folder structure
-    for split in ["train", "val"]:
-        if version == 8:
-            for sub in ["images", "labels"]:
-                (out_dir / split / sub).mkdir(parents=True, exist_ok=True)
+# def prepare_data(izutsumiPaths, notIzutsumiPaths, out_dir = settings.paths.training_dir, version = 0):
+#     # create YOLO folder structure
+#     for split in ["train", "val"]:
+#         if version == 8:
+#             for sub in ["images", "labels"]:
+#                 (out_dir / split / sub).mkdir(parents=True, exist_ok=True)
 
-    print(f"Izutsumi: {len(izutsumiPaths)} | Not Izutsumi: {len(notIzutsumiPaths)}")
+#     print(f"Izutsumi: {len(izutsumiPaths)} | Not Izutsumi: {len(notIzutsumiPaths)}")
 
-    izutsumiPaths, notIzutsumiPaths = ([Path(i) for i in izutsumiPaths], [Path(i) for i in notIzutsumiPaths])
+#     izutsumiPaths, notIzutsumiPaths = ([Path(i) for i in izutsumiPaths], [Path(i) for i in notIzutsumiPaths])
 
-    iz_train, iz_val = split_data(izutsumiPaths)
-    not_train, not_val = split_data(notIzutsumiPaths)
+#     iz_train, iz_val = split_data(izutsumiPaths)
+#     not_train, not_val = split_data(notIzutsumiPaths)
 
-    if version == 8:
-        copy_and_label_v8(out_dir, iz_train, "train", 0)
-        copy_and_label_v8(out_dir, iz_val, "val", 0)
-        copy_and_label_v8(out_dir, not_train, "train", 1)
-        copy_and_label_v8(out_dir, not_val, "val", 1)
-    elif version == 11:
-        copy_11(out_dir, iz_train, "train", 0)
-        copy_11(out_dir, iz_val, "val", 0)
-        copy_11(out_dir, not_train, "train", 1)
-        copy_11(out_dir, not_val, "val", 1)
-        print('not implemented xd')
+#     if version == 8:
+#         copy_and_label_v8(out_dir, iz_train, "train", 0)
+#         copy_and_label_v8(out_dir, iz_val, "val", 0)
+#         copy_and_label_v8(out_dir, not_train, "train", 1)
+#         copy_and_label_v8(out_dir, not_val, "val", 1)
+#     elif version == 11:
+#         copy_11(out_dir, iz_train, "train", 0)
+#         copy_11(out_dir, iz_val, "val", 0)
+#         copy_11(out_dir, not_train, "train", 1)
+#         copy_11(out_dir, not_val, "val", 1)
+#         print('not implemented xd')
 
 
 def safe_symlink(target, link_name):
@@ -135,9 +135,9 @@ def create_dataset_yaml(path, train_path, val_path, names, output_path="dataset.
     Creates the dataset.yaml file for YOLO training.
     """
     dataset_yaml = {
-        'path': str(path),
-        'train': str(train_path),
-        'val': str(train_path), # using same set for val for now
+        'path': str(Path(path).resolve()),
+        'train': str(Path(train_path).resolve()),
+        'val': str(Path(val_path).resolve()), # using same set for val for now
         'names': names
     }
 

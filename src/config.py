@@ -6,22 +6,12 @@ from typing import Any
 class Paths(BaseModel):
     data: Path
     
-    # Training paths (GCS/Colab)
     manga_dir: Path | None = None
     annotations_dir: Path | None = None
-    
-    # Inference/Processing paths
-    pages_dir: Path | None = None
-    panels_dir: Path | None = None
-    crops_dir: Path | None = None
-    izutsumi_dir: Path | None = None
-    not_izutsumi_dir: Path | None = None
-    embs_dir: Path | None = None
-    training_dir: Path | None = None
-    
-    model_dir: Path
-    output_dir: Path
-    runs_dir: Path
+    ls_exports_dir: Path | None = None
+    model_dir: Path | None = None
+    output_dir: Path | None = None
+    runs_dir: Path | None = None
 
 class Params(BaseModel):
     img_size: int
