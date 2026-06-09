@@ -33,32 +33,6 @@ def copy_and_label_v8(out_dir, imgs, split, class_id):
             f.write(f"{class_id} 0.5 0.5 1.0 1.0\n")
 
 
-# def prepare_data(izutsumiPaths, notIzutsumiPaths, out_dir = settings.paths.training_dir, version = 0):
-#     # create YOLO folder structure
-#     for split in ["train", "val"]:
-#         if version == 8:
-#             for sub in ["images", "labels"]:
-#                 (out_dir / split / sub).mkdir(parents=True, exist_ok=True)
-
-#     print(f"Izutsumi: {len(izutsumiPaths)} | Not Izutsumi: {len(notIzutsumiPaths)}")
-
-#     izutsumiPaths, notIzutsumiPaths = ([Path(i) for i in izutsumiPaths], [Path(i) for i in notIzutsumiPaths])
-
-#     iz_train, iz_val = split_data(izutsumiPaths)
-#     not_train, not_val = split_data(notIzutsumiPaths)
-
-#     if version == 8:
-#         copy_and_label_v8(out_dir, iz_train, "train", 0)
-#         copy_and_label_v8(out_dir, iz_val, "val", 0)
-#         copy_and_label_v8(out_dir, not_train, "train", 1)
-#         copy_and_label_v8(out_dir, not_val, "val", 1)
-#     elif version == 11:
-#         copy_11(out_dir, iz_train, "train", 0)
-#         copy_11(out_dir, iz_val, "val", 0)
-#         copy_11(out_dir, not_train, "train", 1)
-#         copy_11(out_dir, not_val, "val", 1)
-#         print('not implemented xd')
-
 
 def safe_symlink(target, link_name):
     """
@@ -148,6 +122,97 @@ def create_dataset_yaml(path, train_path, val_path, names, output_path="dataset.
     print(f"created {yaml_path}")
     return yaml_path
 
+def setup_stage1_data(manga_dir=None, labels_dir=None, stage1_dir=None):
+    """
+    Set up Stage 1 YOLO training data:
+    1. Symlink manga images with labels into stage1/images/
+    2. Generate training list
+    3. Generate dataset.yaml
+
+    Args:
+        manga_dir: Path to manga images. Defaults to settings.paths.manga_dir.
+        labels_dir: Path to YOLO label files. Defaults to settings.paths.stage1_labels_dir.
+        stage1_dir: Path to stage1 output directory. Defaults to settings.paths.stage1_dir.
+
+    Returns:
+        dict with keys: symlinks (int), train_entries (int), dataset_yaml (Path)
+    """
+    if manga_dir is None:
+        manga_dir = settings.paths.manga_dir
+    if labels_dir is None:
+        labels_dir = settings.paths.stage1_labels_dir
+    if stage1_dir is None:
+        stage1_dir = settings.paths.stage1_dir
+
+    if manga_dir is None or labels_dir is None or stage1_dir is None:
+        missing = [k for k, v in [("manga_dir", manga_dir), ("labels_dir", labels_dir), ("stage1_dir", stage1_dir)] if v is None]
+        raise ValueError(f"Required paths not configured: {', '.join(missing)}. Set them in config/pipeline.yaml or pass explicitly.")
+
+    manga_dir = Path(manga_dir)
+    labels_dir = Path(labels_dir)
+    stage1_dir = Path(stage1_dir)
+    images_dir = stage1_dir / "images"
+
+    images_dir.mkdir(parents=True, exist_ok=True)
+
+    # Step 1: Symlink labeled images
+    print("Step 1: Creating symlinks for labeled images...")
+    label_files = list(labels_dir.rglob("*.txt"))
+    symlink_count = 0
+    for label_path in label_files:
+        rel_path = label_path.relative_to(labels_dir)
+        img_rel_path = rel_path.with_suffix(".jpg")
+        img_src = manga_dir / img_rel_path
+        img_dest = images_dir / img_rel_path
+
+        if not img_src.exists():
+            img_rel_path_png = rel_path.with_suffix(".png")
+            img_src = manga_dir / img_rel_path_png
+            img_dest = images_dir / img_rel_path_png
+
+        if img_src.exists():
+            img_dest.parent.mkdir(parents=True, exist_ok=True)
+            safe_symlink(img_src, img_dest)
+            symlink_count += 1
+        else:
+            print(f"  Warning: Image not found for {rel_path}")
+
+    print(f"  Created {symlink_count} symlinks in {images_dir}")
+
+    # Step 2: Generate training list
+    print("\nStep 2: Generating training list...")
+    train_list_path = stage1_dir / "train.txt"
+    generate_training_list(str(images_dir), str(labels_dir), str(train_list_path), force_regenerate=True)
+
+    train_entries = 0
+    if train_list_path.exists():
+        with open(train_list_path, 'r') as f:
+            train_entries = sum(1 for _ in f)
+
+    # Step 3: Generate dataset.yaml
+    print("\nStep 3: Generating dataset.yaml...")
+    names = {v: k for k, v in settings.labels.stage1.model_dump().items()}
+    dataset_yaml_path = create_dataset_yaml(
+        path=str(stage1_dir),
+        train_path=str(train_list_path),
+        val_path=str(train_list_path),
+        names=names,
+        output_path=str(stage1_dir / "dataset.yaml"),
+    )
+
+    print(f"\n=== Stage 1 Data Setup Complete ===")
+    print(f"  Images:  {images_dir}")
+    print(f"  Labels:  {labels_dir}")
+    print(f"  Train list: {train_list_path}")
+    print(f"  Dataset YAML: {dataset_yaml_path}")
+
+    return {
+        "symlinks": symlink_count,
+        "train_entries": train_entries,
+        "dataset_yaml": dataset_yaml_path,
+    }
+
+
 def save_best_model(project_dir, run_name, target_dir, target_name="best.pt"):
     """
     Saves the best model from the training run to a target directory.
@@ -169,5 +234,3 @@ def save_best_model(project_dir, run_name, target_dir, target_name="best.pt"):
 
 
 
-
-    print(f'Data prepared in {out_dir}')

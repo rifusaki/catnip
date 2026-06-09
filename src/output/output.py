@@ -3,7 +3,12 @@ import cv2
 import os
 from pathlib import Path
 from PIL import Image
-from ..recognition.embeddingModel import load_img
+def load_img(path, target_size=None):
+    """Load an image as a numpy array. Optionally resize."""
+    img = Image.open(path).convert('RGB')
+    if target_size:
+        img = img.resize(target_size, Image.LANCZOS)
+    return np.array(img)
 
 
 def char_nearest_neighbor(crop_paths, final_indices, final_scores, similarity_threshold):

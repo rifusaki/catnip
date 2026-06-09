@@ -1,6 +1,4 @@
-# =====================
-# CATNIP CONFIG
-# =====================
+# catnip config
 
 project:
   name: catnip
@@ -8,17 +6,71 @@ project:
 
 paths:
   data: catnip-data/
-  
-  # --- Training Data ---
+
+  # Source (Label Studio)
   manga_dir: ${paths.data}/data/manga
   annotations_dir: ${paths.data}/data/annotations
   ls_exports_dir: ${paths.data}/data/ls-exports
 
-  # --- Models & outputs ---
+  # Stage 1: YOLO (face/body)
+  stage1_dir: ${paths.data}/data/stage1
+  stage1_images_dir: ${paths.stage1_dir}/images
+  stage1_labels_dir: ${paths.stage1_dir}/labels
+  crops_dir: ${paths.stage1_dir}/crops
+
+  # Stage 2: Re-ID (izutsumi/not_izutsumi)
+  stage2_dir: ${paths.data}/data/stage2
+  izutsumi_dir: ${paths.stage2_dir}/izutsumi
+  not_izutsumi_dir: ${paths.stage2_dir}/not_izutsumi
+
+  # Models and Outputs
   model_dir: ${paths.data}/models
   runs_dir: ${paths.data}/runs
   output_dir: ${paths.data}/results
 
+labels:
+  stage1:
+    body: 0
+    face: 1
+  stage2:
+    izutsumi: 0
+    not_izutsumi: 1
+
 params:
-  img_size: 640
-  device: "cpu"  # "mps", "cuda", "cpu"
+  device: mps  # "mps", "cuda", "cpu"
+  sahi:
+    slice_height: 640
+    slice_width: 640
+    overlap_ratio: 0.2
+    confidence_threshold: 0.3
+  metric_learning:
+    img_size: 224
+    batch_size: 32
+    margin: 0.5
+    learning_rate: 0.0003
+    epochs: 100
+    faiss_index_path: index.faiss
+    embeddings_model_path: reid_resnet18.pth
+
+training:
+  stage1:
+    model: yolo26n.pt
+    imgsz: 1280
+    epochs: 300
+    patience: 0
+    batch: 8
+    device: mps
+    freeze: 10
+    mosaic: 0.5
+    lr0: 0.001
+    cos_lr: true
+  stage2:
+    model: reid_resnet18.pth
+    batch_size: 32
+    epochs: 100
+    learning_rate: 0.0003
+    patience: 20
+    device: mps
+    margin: 0.5
+    p: 8
+    k: 4
