@@ -1,37 +1,18 @@
 import shutil, random
 import os
 import yaml
+import logging
 from src.config import settings
 from pathlib import Path
 
-# random split 80/20 for both classes
-def split_data(imgs, val_ratio=0.2):
-    random.shuffle(imgs)
+logger = logging.getLogger(__name__)
+
+# random split 80/20 for train/val
+def split_data(imgs, val_ratio=0.2, seed=42):
+    rng = random.Random(seed)
+    rng.shuffle(imgs)
     n_val = int(len(imgs) * val_ratio)
     return imgs[n_val:], imgs[:n_val]  # train, val
-
-
-def copy_11(out_dir, imgs, split, class_id):
-    if class_id == 0: type = 'izutsumi'
-    elif class_id == 1: type = 'notIzutsumi'
-    (out_dir / split / type ).mkdir(parents=True, exist_ok=True)
-    for img in imgs:
-        dest_img = out_dir / split / type / img.name
-        shutil.copy(img, dest_img)
-
-
-# copy images and create YOLO labels
-def copy_and_label_v8(out_dir, imgs, split, class_id):
-
-    for img in imgs:
-        dest_img = out_dir / split / "images" / img.name
-        shutil.copy(img, dest_img)
-
-        # create empty label box
-        label_path = out_dir / split / "labels" / (img.stem + ".txt")
-        with open(label_path, "w") as f:
-            f.write(f"{class_id} 0.5 0.5 1.0 1.0\n")
-
 
 
 def safe_symlink(target, link_name):
@@ -47,10 +28,10 @@ def safe_symlink(target, link_name):
     if not link_name.exists():
         try:
             os.symlink(target, link_name)
-            print(f"Created symlink: {link_name} -> {target}")
+            logger.info("Created symlink: %s -> %s", link_name, target)
         except OSError as e:
-            print(f"Failed to create symlink {link_name} -> {target}: {e}")
-            print("On Windows, you may need to run VS Code as Administrator or enable Developer Mode.")
+            logger.error("Failed to create symlink %s -> %s: %s", link_name, target, e)
+            logger.warning("On Windows, you may need to run VS Code as Administrator or enable Developer Mode.")
 
 def generate_training_list(images_dir, labels_dir, output_path, force_regenerate=False):
     """
@@ -61,16 +42,16 @@ def generate_training_list(images_dir, labels_dir, output_path, force_regenerate
     labels_dir = Path(labels_dir)
 
     if output_path.exists() and not force_regenerate:
-        print(f"found existing training list: {output_path}")
+        logger.info("Found existing training list: %s", output_path)
         with open(output_path, 'r') as f:
             lines = f.readlines()
-        print(f"loaded {len(lines)} images from existing list.")
+        logger.info("Loaded %d images from existing list.", len(lines))
         return output_path
 
-    print(f"generating new training list: {output_path}")
+    logger.info("Generating new training list: %s", output_path)
     
     image_files = list(images_dir.rglob("*.jpg")) + list(images_dir.rglob("*.png")) + list(images_dir.rglob("*.jpeg"))
-    print(f"found {len(image_files)} total images in '{images_dir.name}' directory.")
+    logger.info("Found %d total images in '%s' directory.", len(image_files), images_dir.name)
 
     labeled_images = []
     unlabeled_count = 0
@@ -95,12 +76,12 @@ def generate_training_list(images_dir, labels_dir, output_path, force_regenerate
     with open(output_path, "w") as f:
         f.write("\n".join(labeled_images))
 
-    print(f"generated {output_path}")
-    print(f"   - labeled images (subset): {len(labeled_images)}")
-    print(f"   - unlabeled images (skipped): {unlabeled_count}")
+    logger.info("Generated %s", output_path)
+    logger.info("   - labeled images (subset): %d", len(labeled_images))
+    logger.info("   - unlabeled images (skipped): %d", unlabeled_count)
 
     if len(labeled_images) == 0:
-        print("warning: no labeled images found.")
+        logger.warning("No labeled images found.")
     
     return output_path
 
@@ -119,15 +100,18 @@ def create_dataset_yaml(path, train_path, val_path, names, output_path="dataset.
     with open(yaml_path, 'w') as f:
         yaml.dump(dataset_yaml, f)
 
-    print(f"created {yaml_path}")
+    logger.info("Created %s", yaml_path)
     return yaml_path
 
 def setup_stage1_data(manga_dir=None, labels_dir=None, stage1_dir=None):
     """
-    Set up Stage 1 YOLO training data:
+    Set up Stage 1 YOLO training data (3-class: body=0, head=1, face=2):
     1. Symlink manga images with labels into stage1/images/
     2. Generate training list
     3. Generate dataset.yaml
+
+    Class labels are read dynamically from settings.labels.stage1 (config/pipeline.yaml).
+    No hardcoded class count — adding or removing classes is a config-only change.
 
     Args:
         manga_dir: Path to manga images. Defaults to settings.paths.manga_dir.
@@ -156,7 +140,7 @@ def setup_stage1_data(manga_dir=None, labels_dir=None, stage1_dir=None):
     images_dir.mkdir(parents=True, exist_ok=True)
 
     # Step 1: Symlink labeled images
-    print("Step 1: Creating symlinks for labeled images...")
+    logger.info("Step 1: Creating symlinks for labeled images...")
     label_files = list(labels_dir.rglob("*.txt"))
     symlink_count = 0
     for label_path in label_files:
@@ -175,12 +159,12 @@ def setup_stage1_data(manga_dir=None, labels_dir=None, stage1_dir=None):
             safe_symlink(img_src, img_dest)
             symlink_count += 1
         else:
-            print(f"  Warning: Image not found for {rel_path}")
+            logger.warning("  Image not found for %s", rel_path)
 
-    print(f"  Created {symlink_count} symlinks in {images_dir}")
+    logger.info("  Created %d symlinks in %s", symlink_count, images_dir)
 
     # Step 2: Generate training list
-    print("\nStep 2: Generating training list...")
+    logger.info("Step 2: Generating training list...")
     train_list_path = stage1_dir / "train.txt"
     generate_training_list(str(images_dir), str(labels_dir), str(train_list_path), force_regenerate=True)
 
@@ -190,7 +174,7 @@ def setup_stage1_data(manga_dir=None, labels_dir=None, stage1_dir=None):
             train_entries = sum(1 for _ in f)
 
     # Step 3: Generate dataset.yaml
-    print("\nStep 3: Generating dataset.yaml...")
+    logger.info("Step 3: Generating dataset.yaml...")
     names = {v: k for k, v in settings.labels.stage1.model_dump().items()}
     dataset_yaml_path = create_dataset_yaml(
         path=str(stage1_dir),
@@ -200,11 +184,14 @@ def setup_stage1_data(manga_dir=None, labels_dir=None, stage1_dir=None):
         output_path=str(stage1_dir / "dataset.yaml"),
     )
 
-    print(f"\n=== Stage 1 Data Setup Complete ===")
-    print(f"  Images:  {images_dir}")
-    print(f"  Labels:  {labels_dir}")
-    print(f"  Train list: {train_list_path}")
-    print(f"  Dataset YAML: {dataset_yaml_path}")
+    logger.info(
+        "=== Stage 1 Data Setup Complete ===\n"
+        "  Images:  %s\n"
+        "  Labels:  %s\n"
+        "  Train list: %s\n"
+        "  Dataset YAML: %s",
+        images_dir, labels_dir, train_list_path, dataset_yaml_path,
+    )
 
     return {
         "symlinks": symlink_count,
@@ -226,11 +213,161 @@ def save_best_model(project_dir, run_name, target_dir, target_name="best.pt"):
     if best_model_path.exists():
         target_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy(best_model_path, target_model_path)
-        print(f"Model saved to {target_model_path}")
+        logger.info("Model saved to %s", target_model_path)
         return target_model_path
     else:
-        print(f"Training might have failed, best.pt not found at {best_model_path}")
+        logger.error("Training might have failed, best.pt not found at %s", best_model_path)
         return None
 
 
+def prepare_triplet_dataset(
+    source_dirs: list[str | Path],
+    izutsumi_dir: str | Path | None = None,
+    not_izutsumi_dir: str | Path | None = None,
+    val_ratio: float = 0.2,
+    class_imbalance_warn_ratio: float = 5.0,
+    seed: int = 42,
+):
+    """
+    Prepares a triplet dataset from source directories containing mixed crops.
 
+    Scans source directories for image files, classifies them by filename
+    (files with "izutsumi" in path → izutsumi class, others → not-izutsumi),
+    optionally adds images from pre-sorted izutsumi/not-izutsumi directories,
+    splits into train/val sets, and copies to stage2_dir.
+
+    Args:
+        source_dirs: Directories with mixed crops, classified by filename pattern.
+        izutsumi_dir: Additional directory with pre-sorted izutsumi images.
+            Defaults to settings.paths.izutsumi_dir.
+        not_izutsumi_dir: Additional directory with pre-sorted not-izutsumi images.
+            Defaults to settings.paths.not_izutsumi_dir.
+        val_ratio: Fraction of images reserved for validation (default 0.2).
+        class_imbalance_warn_ratio: Logs WARNING if larger_class / smaller_class
+            exceeds this threshold.
+
+    Returns:
+        dict with train/val per-class image counts:
+        {"train": {"izutsumi": int, "not_izutsumi": int},
+         "val":   {"izutsumi": int, "not_izutsumi": int}}
+    """
+    # Resolve defaults from settings
+    if izutsumi_dir is None:
+        izutsumi_dir = settings.paths.izutsumi_dir
+    if not_izutsumi_dir is None:
+        not_izutsumi_dir = settings.paths.not_izutsumi_dir
+
+    izutsumi_dir = Path(izutsumi_dir)
+    not_izutsumi_dir = Path(not_izutsumi_dir)
+    source_dirs = [Path(d) for d in source_dirs]
+    stage2_dir = settings.paths.stage2_dir
+
+    valid_suffixes = {".jpg", ".png", ".jpeg"}
+
+    izutsumi_images: list[Path] = []
+    not_izutsumi_images: list[Path] = []
+
+    # --- Scan source directories (filename-based classification) ---
+    for src_dir in source_dirs:
+        if not src_dir.exists():
+            logger.warning("Source directory does not exist: %s", src_dir)
+            continue
+
+        scanned = 0
+        for suffix in valid_suffixes:
+            for img_path in src_dir.glob(f"*{suffix}"):
+                scanned += 1
+                if "izutsumi" in str(img_path).lower():
+                    izutsumi_images.append(img_path)
+                else:
+                    not_izutsumi_images.append(img_path)
+
+        if scanned == 0:
+            logger.warning("No image files found in source directory: %s", src_dir)
+
+    # --- Scan izutsumi-specific directory ---
+    if izutsumi_dir.exists():
+        for suffix in valid_suffixes:
+            izutsumi_images.extend(izutsumi_dir.glob(f"*{suffix}"))
+    else:
+        logger.warning("Izutsumi source directory does not exist: %s", izutsumi_dir)
+
+    # --- Scan not-izutsumi-specific directory ---
+    if not_izutsumi_dir.exists():
+        for suffix in valid_suffixes:
+            not_izutsumi_images.extend(not_izutsumi_dir.glob(f"*{suffix}"))
+    else:
+        logger.warning("Not-izutsumi source directory does not exist: %s", not_izutsumi_dir)
+
+    # --- Duplicate-free deduplication ---
+    izutsumi_images = list(dict.fromkeys(izutsumi_images))
+    not_izutsumi_images = list(dict.fromkeys(not_izutsumi_images))
+
+    # --- Log collected totals ---
+    logger.info(
+        "Collected %d izutsumi and %d not-izutsumi images across all sources",
+        len(izutsumi_images), len(not_izutsumi_images),
+    )
+
+    # Check for empty datasets
+    if len(izutsumi_images) == 0:
+        logger.warning("No izutsumi images found in any source directory")
+    if len(not_izutsumi_images) == 0:
+        logger.warning("No not-izutsumi images found in any source directory")
+
+    # --- Split each class into train/val ---
+    izutsumi_train, izutsumi_val = split_data(izutsumi_images, val_ratio, seed=seed)
+    not_izutsumi_train, not_izutsumi_val = split_data(not_izutsumi_images, val_ratio, seed=seed)
+
+    # --- Copy files to stage2_dir ---
+    def _copy_images(images: list[Path], dest_dir: Path, class_name: str):
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        for img in images:
+            try:
+                shutil.copy(img, dest_dir / img.name)
+            except (OSError, PermissionError) as e:
+                logger.warning("Failed to copy %s → %s/%s: %s", img, class_name, img.name, e)
+
+    _copy_images(izutsumi_train, stage2_dir / "train" / "izutsumi", "izutsumi")
+    _copy_images(izutsumi_val,   stage2_dir / "val" / "izutsumi", "izutsumi")
+    _copy_images(not_izutsumi_train, stage2_dir / "train" / "not_izutsumi", "not_izutsumi")
+    _copy_images(not_izutsumi_val,   stage2_dir / "val" / "not_izutsumi", "not_izutsumi")
+
+    # --- Build result counts ---
+    result = {
+        "train": {
+            "izutsumi": len(izutsumi_train),
+            "not_izutsumi": len(not_izutsumi_train),
+        },
+        "val": {
+            "izutsumi": len(izutsumi_val),
+            "not_izutsumi": len(not_izutsumi_val),
+        },
+    }
+
+    # --- Log per-class counts for each split ---
+    logger.info(
+        "Train split — izutsumi: %d, not_izutsumi: %d",
+        result["train"]["izutsumi"], result["train"]["not_izutsumi"],
+    )
+    logger.info(
+        "Val split   — izutsumi: %d, not_izutsumi: %d",
+        result["val"]["izutsumi"], result["val"]["not_izutsumi"],
+    )
+
+    # --- Class imbalance warning ---
+    total_izutsumi = len(izutsumi_images)
+    total_not_izutsumi = len(not_izutsumi_images)
+    if total_izutsumi > 0 and total_not_izutsumi > 0:
+        smaller = min(total_izutsumi, total_not_izutsumi)
+        larger = max(total_izutsumi, total_not_izutsumi)
+        ratio = larger / smaller
+        if ratio > class_imbalance_warn_ratio:
+            logger.warning(
+                "Class imbalance detected: izutsumi=%d, not_izutsumi=%d "
+                "(ratio %.1f:1, exceeds threshold %.1f)",
+                total_izutsumi, total_not_izutsumi,
+                ratio, class_imbalance_warn_ratio,
+            )
+
+    return result

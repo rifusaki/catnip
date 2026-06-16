@@ -3,7 +3,7 @@ authors = ["rifusaki <martina@rifusaki.com>"]
 channels = ["conda-forge", "pytorch"]
 name = "catnip"
 platforms = ["osx-arm64", "linux-64"]
-version = "0.1.0"
+version = "0.2.0"
 
 [pypi-options]
 extra-index-urls = ["https://download.pytorch.org/whl/xpu"]
@@ -16,16 +16,18 @@ numpy = "<2"
 ipykernel = ">=6.30.1,<7"
 scikit-learn = ">=1.7.2,<2"
 matplotlib = ">=3.10.6,<4"
-ultralytics = ">=8.3.203,<9"
+ultralytics = ">=8.4.66,<9"
 pydantic = ">=2.11.9,<3"
 pydantic-settings = ">=2.11.0,<3"
 omegaconf = ">=2.3.0,<3"
 sahi = ">=0.11.36,<0.13"
 requests = ">=2.34.2,<3"
+python-dotenv = ">=1.2.2,<2"
 
 [pypi-dependencies]
 torchsummary = ">=1.5.1, <2"
 opencv-python = ">=4.10.0,<5"
+manga109api = ">=0.3.1, <0.4"
 
 # home server running on WSL
 [target.linux-64.pypi-dependencies]
@@ -38,6 +40,6 @@ torchaudio = "==2.6.0+xpu"
 # dev machine
 [target.osx-arm64.dependencies]
 # macOS uses conda PyTorch (no Intel XPU)
-pytorch = ">=2.1.0,<2.6"
-torchvision = ">=0.16,<0.21"
+pytorch = "==2.4.1"
+torchvision = "==0.19.1"
 

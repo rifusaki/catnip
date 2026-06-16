@@ -1,8 +1,11 @@
+import logging
 import numpy as np, json, matplotlib.pyplot as plt, shutil
 import cv2
 import os
 from pathlib import Path
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 def load_img(path, target_size=None):
     """Load an image as a numpy array. Optionally resize."""
     img = Image.open(path).convert('RGB')
@@ -32,7 +35,7 @@ def char_nearest_neighbor(crop_paths, final_indices, final_scores, similarity_th
         final_scores = final_scores[:120]
         rows, cols = 15, 8
         figsize = (16, 40)
-        print(f"Showing top 120 results out of {n_results} matches")
+        logger.info("Showing top 120 results out of %d matches", n_results)
 
     # Visualization: Display results in grid
     plt.figure(figsize=figsize)
@@ -83,7 +86,7 @@ def save_inference_results(results_generator, output_dir, inference_source):
     output_dir.mkdir(parents=True, exist_ok=True)
     inference_source = Path(inference_source)
     
-    print(f"Saving flattened results to {output_dir}")
+    logger.info("Saving flattened results to %s", output_dir)
     
     for r in results_generator:
         # Calculate flattened filename
@@ -116,7 +119,7 @@ def save_inference_results(results_generator, output_dir, inference_source):
                     x, y, w, h = box.xywhn[0].tolist()
                     f.write(f"{cls} {x:.6f} {y:.6f} {w:.6f} {h:.6f}\n")
     
-    print("Inference results saved.")
+    logger.info("Inference results saved.")
 
 
 

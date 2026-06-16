@@ -3,15 +3,23 @@ Convert Label Studio per-annotation JSON exports to YOLO format.
 """
 
 import json
+import logging
 import sys
 from collections import defaultdict
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 
 def _default_stage1_remap(label_name: str) -> str:
-    """Remap any _body/_face label to body or face (class-agnostic for Stage 1)."""
+    """Remap *_body → body, *_head → head, *_face → face for 3-class detection.
+
+    Unrecognised suffixes pass through to the class_map lookup.
+    """
     if label_name.endswith("_body"):
         return "body"
+    if label_name.endswith("_head"):
+        return "head"
     if label_name.endswith("_face"):
         return "face"
     return label_name
@@ -64,14 +72,14 @@ def convert_annotations_directory(
             from src.config import settings
             class_map = settings.labels.stage1.model_dump()
         except (ImportError, AttributeError):
-            class_map = {"body": 0, "face": 1}
+            class_map = {"body": 0, "head": 1, "face": 2}
 
     if remap_fn is None:
         remap_fn = _default_stage1_remap
 
     dir_path = Path(dir_path)
     if not dir_path.is_dir():
-        print(f"Error: Directory not found: '{dir_path}'")
+        logger.error("Directory not found: '%s'", dir_path)
         sys.exit(1)
 
     output_dir = Path(output_dir)
@@ -89,7 +97,7 @@ def convert_annotations_directory(
             with open(entry, 'r') as f:
                 data = json.load(f)
         except (json.JSONDecodeError, OSError) as exc:
-            print(f"Warning: Skipping {entry.name}: {exc}")
+            logger.warning("Skipping %s: %s", entry.name, exc)
             skipped += 1
             continue
 
@@ -100,12 +108,12 @@ def convert_annotations_directory(
         url = task_data.get('image', '')
 
         if not url:
-            print(f"Warning: Skipping {entry.name}: No 'task.data.image' URL")
+            logger.warning("Skipping %s: No 'task.data.image' URL", entry.name)
             skipped += 1
             continue
 
         if "manga/" not in url:
-            print(f"Warning: Skipping {entry.name}: Unexpected URL format '{url}'")
+            logger.warning("Skipping %s: Unexpected URL format '%s'", entry.name, url)
             skipped += 1
             continue
 
@@ -132,9 +140,9 @@ def convert_annotations_directory(
             label_name = remap_fn(original_label)
 
             if label_name not in class_map:
-                print(
-                    f"Warning: Unknown label '{label_name}' "
-                    f"(from '{original_label}') in {rel_path}. Skipping."
+                logger.warning(
+                    "Unknown label '%s' (from '%s') in %s. Skipping.",
+                    label_name, original_label, rel_path,
                 )
                 continue
 
@@ -172,7 +180,9 @@ def convert_annotations_directory(
 
         written += 1
 
-    print(
-        f"Processed {file_count} annotation files ({skipped} skipped). "
-        f"Wrote {written} label files to {output_dir}"
+    logger.info(
+        "Processed %d annotation files (%d skipped). Wrote %d label files to %s",
+        file_count, skipped, written, output_dir,
     )
+
+    return {"file_count": file_count, "label_count": written, "skipped_json": skipped, "output_dir": str(output_dir)}

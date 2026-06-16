@@ -1,6 +1,9 @@
 from pathlib import Path
 from omegaconf import OmegaConf
 from pydantic import BaseModel
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class Paths(BaseModel):
@@ -22,6 +25,24 @@ class Paths(BaseModel):
     izutsumi_dir: Path
     not_izutsumi_dir: Path
 
+    # External Datasets
+    animeheads_dir: Path
+    ah_v1_dir: Path
+    ah_v2_dir: Path
+    ah_af_dir: Path
+    ah_coco_dir: Path
+    manga109_dir: Path
+    izutsumi_manga_dir: Path
+    izutsumi_annotations_dir: Path
+
+    # Unified Training
+    unified_dir: Path
+    unified_images_dir: Path
+    unified_labels_dir: Path
+
+    # Pre-sliced (SAHI-parity) Training
+    stage1_sliced_dir: Path
+
     # Models & Outputs
     model_dir: Path
     runs_dir: Path
@@ -30,6 +51,7 @@ class Paths(BaseModel):
 
 class Stage1Labels(BaseModel):
     body: int
+    head: int
     face: int
 
 
@@ -48,6 +70,7 @@ class SahiParams(BaseModel):
     slice_width: int
     overlap_ratio: float
     confidence_threshold: float
+    min_area_ratio: float
 
 
 class MetricLearningParams(BaseModel):
@@ -72,6 +95,7 @@ class Stage1TrainingParams(BaseModel):
     epochs: int
     patience: int
     batch: int
+    workers: int
     device: str
     freeze: int
     mosaic: float
@@ -130,9 +154,17 @@ def setup_dirs():
     not_izutsumi = []
 
     if settings.paths.izutsumi_dir and settings.paths.izutsumi_dir.exists():
-        izutsumi = [str(p) for p in sorted(settings.paths.izutsumi_dir.glob("*.jpg"))]
+        izutsumi = [str(p) for p in sorted(
+            list(settings.paths.izutsumi_dir.glob("*.jpg"))
+            + list(settings.paths.izutsumi_dir.glob("*.jpeg"))
+            + list(settings.paths.izutsumi_dir.glob("*.png"))
+        )]
 
     if settings.paths.not_izutsumi_dir and settings.paths.not_izutsumi_dir.exists():
-        not_izutsumi = [str(p) for p in sorted(settings.paths.not_izutsumi_dir.glob("*.jpg"))]
+        not_izutsumi = [str(p) for p in sorted(
+            list(settings.paths.not_izutsumi_dir.glob("*.jpg"))
+            + list(settings.paths.not_izutsumi_dir.glob("*.jpeg"))
+            + list(settings.paths.not_izutsumi_dir.glob("*.png"))
+        )]
 
     return izutsumi, not_izutsumi
