@@ -53,7 +53,7 @@ def main() -> None:
         help="Path to pipeline config YAML (default: config/pipeline.yaml)",
     )
     parser.add_argument(
-        "--override", nargs="*", default=[], metavar="KEY=VALUE",
+        "--override", action="append", default=[], metavar="KEY=VALUE",
         help="Override config values via dot-notation (e.g. training.stage1.batch=4)",
     )
     parser.add_argument(

@@ -185,7 +185,7 @@ def main():
     )
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable DEBUG logging")
     parser.add_argument("--config", type=Path, default="config/pipeline.yaml", help="Path to config file")
-    parser.add_argument("--override", nargs="*", default=[], metavar="KEY=VALUE",
+    parser.add_argument("--override", action="append", default=[], metavar="KEY=VALUE",
                         help="Override config values using dot-notation (e.g. params.sahi.confidence_threshold=0.5)")
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -196,7 +196,7 @@ def main():
     p_extract.add_argument("--output-dir", type=Path, help="Output directory for crops (default: from config)")
     p_extract.add_argument("--model", type=Path, help="Path to YOLO26 model (default: from config)")
     p_extract.add_argument("--verbose", "-v", action="store_true", help="Enable DEBUG logging")
-    p_extract.add_argument("--override", nargs="*", default=[], metavar="KEY=VALUE")
+    p_extract.add_argument("--override", action="append", default=[], metavar="KEY=VALUE")
     p_extract.set_defaults(func=cmd_extract)
 
     # embed
@@ -205,7 +205,7 @@ def main():
     p_embed.add_argument("--output", type=Path, help="Output .npy file for embeddings")
     p_embed.add_argument("--model", type=Path, help="Path to ReID model (default: from config)")
     p_embed.add_argument("--verbose", "-v", action="store_true")
-    p_embed.add_argument("--override", nargs="*", default=[], metavar="KEY=VALUE")
+    p_embed.add_argument("--override", action="append", default=[], metavar="KEY=VALUE")
     p_embed.set_defaults(func=cmd_embed)
 
     # match
@@ -214,7 +214,7 @@ def main():
     p_match.add_argument("--threshold", type=float, default=0.7, help="Similarity threshold (default: 0.7)")
     p_match.add_argument("--output", type=Path, help="Output JSON path for matches")
     p_match.add_argument("--verbose", "-v", action="store_true")
-    p_match.add_argument("--override", nargs="*", default=[], metavar="KEY=VALUE")
+    p_match.add_argument("--override", action="append", default=[], metavar="KEY=VALUE")
     p_match.set_defaults(func=cmd_match)
 
     # pipeline
@@ -222,7 +222,7 @@ def main():
     p_pipeline.add_argument("--input-dir", type=Path, required=True, help="Directory of manga page images")
     p_pipeline.add_argument("--output-dir", type=Path, help="Output directory for results")
     p_pipeline.add_argument("--verbose", "-v", action="store_true")
-    p_pipeline.add_argument("--override", nargs="*", default=[], metavar="KEY=VALUE")
+    p_pipeline.add_argument("--override", action="append", default=[], metavar="KEY=VALUE")
     p_pipeline.set_defaults(func=cmd_pipeline)
 
     # train stage1
@@ -230,12 +230,12 @@ def main():
     train_subs = p_train1.add_subparsers(dest="train_command")
     p_t1 = train_subs.add_parser("stage1", help="Train Stage 1 YOLO26 face/body detection")
     p_t1.add_argument("--verbose", "-v", action="store_true")
-    p_t1.add_argument("--override", nargs="*", default=[], metavar="KEY=VALUE")
+    p_t1.add_argument("--override", action="append", default=[], metavar="KEY=VALUE")
     p_t1.set_defaults(func=cmd_train_stage1)
 
     p_t2 = train_subs.add_parser("stage2", help="Train Stage 2 Triplet Loss ReID")
     p_t2.add_argument("--verbose", "-v", action="store_true")
-    p_t2.add_argument("--override", nargs="*", default=[], metavar="KEY=VALUE")
+    p_t2.add_argument("--override", action="append", default=[], metavar="KEY=VALUE")
     p_t2.set_defaults(func=cmd_train_stage2)
 
     args = parser.parse_args()
