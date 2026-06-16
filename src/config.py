@@ -141,7 +141,30 @@ def load_settings(path: str | Path = "config/pipeline.yaml") -> Settings:
     return Settings(**resolved)
 
 
-settings = load_settings()
+_settings: Settings | None = None
+
+
+def get_settings(path: str | Path = "config/pipeline.yaml") -> Settings:
+    """Return the cached Settings singleton, loading on first call."""
+    global _settings
+    if _settings is None:
+        _settings = load_settings(path)
+    return _settings
+
+
+# Legacy module-level alias — resolved lazily on first attribute access via
+# a thin proxy so that existing callers (`from src.config import settings`)
+# continue to work without triggering OmegaConf at import time.
+class _LazySettings:
+    """Proxy that forwards attribute access to the real Settings on demand."""
+    def __getattr__(self, name: str):
+        return getattr(get_settings(), name)
+
+    def __repr__(self) -> str:
+        return repr(get_settings())
+
+
+settings: Settings = _LazySettings()  # type: ignore[assignment]
 
 
 def setup_dirs():
