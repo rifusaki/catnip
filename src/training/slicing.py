@@ -514,9 +514,10 @@ def write_sliced_dataset_yaml(
     yaml_path = output_dir / "dataset.yaml"
     names_block = "\n".join(f"  {cid}: {name}" for cid, name in sorted(class_names.items()))
     yaml_path.write_text(
-        f"# This dataset.yaml is portable — it resolves relative to *this file's* directory.\n"
-        f"# Sync the parent directory to any machine (Colab, inference server) and train in place.\n"
-        f"path: .\n"
+        f"# NOTE: ultralytics resolves relative paths from CWD, not from this file's location.\n"
+        f"# When using this YAML on a different machine (Colab, inference server), update\n"
+        f"# the path field to the absolute location of this directory.\n"
+        f"path: {output_dir.resolve()}\n"
         f"train: images/train\n"
         f"val: images/val\n"
         f"test: images/test\n"
