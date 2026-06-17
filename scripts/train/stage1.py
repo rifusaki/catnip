@@ -126,6 +126,7 @@ def main() -> None:
                 "batch": batch,
                 "workers": stage1.workers,
                 "device": stage1.device,
+                "cache": stage1.cache,
                 "patience": stage1.patience,
                 "freeze": stage1.freeze,
                 "mosaic": stage1.mosaic,

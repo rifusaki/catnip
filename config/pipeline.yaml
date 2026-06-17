@@ -87,6 +87,7 @@ training:
     imgsz: 640
     epochs: 300
     patience: 0
+    cache: true
     batch: 8
     workers: 4  # dataloader workers (T4: 2-4, M3: 4, A100: 8-16)
     device: mps
