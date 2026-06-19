@@ -8,3 +8,12 @@ yolov8x6_animeface.pt
 __pycache__
 src/models/*
 runs/
+catnip-data/
+
+# local env overrides
+.env
+
+.github/*
+
+# CocoIndex Code (ccc)
+/.cocoindex_code/

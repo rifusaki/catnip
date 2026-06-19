@@ -1,0 +1,25 @@
+name: catnip
+version: 1.0.0
+description: APM project for catnip
+author: rifusaki
+targets:
+- opencode
+dependencies:
+  apm: []
+  mcp:
+  - name: eniayomi/gcp-mcp
+    registry: false
+    transport: stdio
+    command: npx
+    args:
+    - -y
+    - gcp-mcp
+  - name: gcp-tools
+    registry: false
+    transport: stdio
+    command: npx
+    args:
+    - -y
+    - gcp-tools-mcp
+includes: auto
+scripts: {}

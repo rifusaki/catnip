@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=75.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "catnip"
+version = "0.2.0"
+description = ""
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.11"
+authors = [
+    {name = "rifusaki", email = "martina@rifusaki.com"},
+]
+dependencies = [
+    "numpy<2",
+    "scikit-learn>=1.7,<2",
+    "torch>=2.0",
+    "matplotlib>=3.10,<4",
+    "ultralytics>=8.4,<9",
+    "pydantic>=2.11,<3",
+    "pydantic-settings>=2.11,<3",
+    "omegaconf>=2.3,<3",
+    "sahi>=0.11.36,<0.13",
+    "requests>=2.34,<3",
+    "opencv-python>=4.10,<5",
+    "Pillow>=10.0",
+    "torchsummary>=1.5,<2",
+]
+
+[project.scripts]
+catnip = "src.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.setuptools.package-data]
+catnip = ["config/*.yaml"]
