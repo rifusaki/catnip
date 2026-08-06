@@ -63,11 +63,12 @@ Three-tier compute distribution reflecting professional ML engineering patterns:
 | Tier | Environment | Role |
 |------|------------|------|
 | **Dev & Prototyping** | M3 Mac Air (MPS) | Code development, pipeline testing, local sanity-check training |
-| **Heavy Training** | Google Colab (T4 GPU) | Stage 1 YOLO26 training (300 epochs), Stage 2 triplet loss training (100 epochs) |
+| **Heavy Training** | **Kaggle Notebook (T4×2 GPU, 30 h/week)** — primary; Google Colab (T4 GPU) — fallback | Stage 1 YOLO26 training (300 epochs in 12 h chunks), Stage 2 triplet loss training (100 epochs) |
 | **Edge Serving** | Home Server (CPU, ONNX) | Production inference via Dockerized FastAPI with ONNX-exported models |
 
-- **Storage:** Google Cloud Storage bucket `catnip-data`, mounted via gcsfuse in Colab (free egress within Google's network). Cloudflare R2 migration deferred until home server API goes live (avoids egress costs for Label Studio + API traffic).
+- **Storage:** Google Cloud Storage bucket `catnip-data` is the *canonical archive*; Kaggle Datasets (`catnip-stage1-sliced`, `catnip-stage1-output`) are the *training cache*.  The pixi task `kaggle-sync` (run on the dev machine after `scripts/unify/stage1.py --slice`) keeps both in sync.  Cloudflare R2 migration deferred until home server API goes live (avoids egress costs for Label Studio + API traffic).
 - **Label Studio:** Self-hosted at `label.rifusaki.com` (project 2). Images imported from GCS URLs. Exports JSON with bounding box annotations.
+- **Why Kaggle over Colab:** 30 h/week hard cap with a visible counter replaces Colab's arbitrary, unannounced throttling.  Sequential dataset versioning (`kaggle datasets version`) makes resumed training sessions simpler than the Colab tarball re-upload dance.  12 h session cap is the trade-off, handled by `scripts/train/stage1.py --resume` plus publishing the run to `catnip-stage1-output` at session end.
 
 ## 5. Codebase Status
 

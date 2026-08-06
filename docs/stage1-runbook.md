@@ -157,42 +157,83 @@ All commands assume CWD = repo root and pixi env active (`pixi shell`).
 # 1. Reorganize the bucket (once)
 python scripts/reorganize_gcs.py --force
 
-# 2. Generate staging directories
-python scripts/unify/izutsumi.py
-python scripts/unify/manga109.py
-python scripts/unify/coco_heads.py \
-    --input-dir catnip-data/data/AnimeHeadsv3 \
-    --output-dir catnip-data/data/staging/ah_coco
-python scripts/unify/yolo_heads.py
+# 2. Generate staging directories (pixi tasks wrap the same scripts)
+pixi run unify-izutsumi
+pixi run unify-manga109
+pixi run unify-coco-heads
+pixi run unify-yolo-heads
 
 # 3. Merge + slice for SAHI parity
-python scripts/unify/stage1.py --slice --slice-workers 4
+pixi run unify-stage1              # = python scripts/unify/stage1.py --slice --slice-workers 4
 
-# 4. Sync sliced dataset to GCS (required for Colab)
-gsutil -m rsync -r catnip-data/training/stage1_sliced/ \
-    gs://catnip-data/training/stage1_sliced/
+# 4. Sync sliced dataset to GCS + Kaggle in one shot
+#    (rsyncs to gs://catnip-data/training/stage1_sliced/ AND creates/versionizes
+#    the private Kaggle dataset `catnip-stage1-sliced`).
+pixi run -e kaggle kaggle-sync
 
 # 5. Sync the pretrained YOLO26n to GCS (one-time, if not already there)
 gsutil cp catnip-data/models/yolo26n.pt gs://catnip-data/models/yolo26n.pt
 ```
 
-### B. On Colab (T4 GPU)
+### B. On Kaggle (T4×2 GPU) — primary training path
+
+Once-per-account setup:
+
+1. Verify phone number at kaggle.com/settings (required for GPU access).
+2. Add Kaggle Secrets: `KAGGLE_USERNAME`, `KAGGLE_KEY` (from
+   kaggle.com/settings → "Create New Token").
+3. Upload the `catnip-stage1-sliced` dataset version (done by step A.4
+   above) and attach it in the notebook sidebar.
+
+Per-session:
 
 ```python
-# Mount bucket via gcsfuse
-!echo "catnip-data" > /tmp/bucket_name
-!gcsfuse --implicit-dirs catnip-data /content/catnip-data
+# 1. Open notebooks/catnipKaggle.ipynb in a new notebook.
+# 2. Right sidebar: Accelerator = GPU T4 x2, Internet = ON.
+# 3. Add data: catnip-stage1-sliced (and, for resume, the most recent
+#    catnip-stage1-output version).
+# 4. Run all three cells.
+#    - Cell 1: install deps, hydrate secrets, clone repo, set CATNIP_DATA.
+#    - Cell 2: trains 24 epochs at batch=64 (≈12 h); resumes from last.pt
+#      if present in /kaggle/working/catnip-data-local/runs/detect/stage1/.
+#    - Cell 3: publishes the model + run to a new `catnip-stage1-output`
+#      version (private). /kaggle/working/ is wiped at session end —
+#      this is the only way to keep the artifact.
 
-# Train (config-driven, reads from /content/catnip-data/...)
-!python scripts/train/stage1.py
+# To resume after the 12 h cap, re-attach the latest catnip-stage1-output
+# as a second dataset, copy its weights/ into the canonical path, and
+# re-run cells 2-3.
 ```
 
-### C. Back on the dev machine
+Quotas to budget around:
+
+| Limit                        | Value          | Implication                                |
+| ---------------------------- | -------------- | ------------------------------------------ |
+| Weekly GPU hours             | 30 h           | ~2 long sessions per week                  |
+| Per-session runtime          | 12 h           | Cap on a single training chunk (≈24 epochs) |
+| Working disk per session     | 20 GB          | The 14 GB dataset + cache fits, barely     |
+| Per-dataset storage          | 200 GB         | Sequential versions of `catnip-stage1-sliced` are fine |
+| Private-datasets total       | 200 GB         | Two datasets × sequential versions is fine |
+
+### C. On Colab (T4 GPU) — fallback only
+
+Use this only if Kaggle quota is exhausted mid-Phase-B.  Colab has no
+predictable quota; sessions can be terminated without notice.
+
+```python
+# 1. Open notebooks/catnipColab.ipynb
+# 2. Set BRANCH in cell 1 (currently refactor/reID)
+# 3. Run all cells — gcsfuse mount, tarball download, train, upload back
+```
+
+### D. Back on the dev machine
 
 ```bash
-# 6. Pull the trained model from Colab → GCS → local
-gsutil cp gs://catnip-data/models/yolo26_stage1_body_head_face.pt \
-    catnip-data/models/
+# 6. Pull the trained model from the Kaggle output dataset
+kaggle datasets download catnip-stage1-output -p /tmp/catnip-out --unzip
+cp /tmp/catnip-out/models/yolo26_stage1_body_head_face.pt catnip-data/models/
+gsutil cp catnip-data/models/yolo26_stage1_body_head_face.pt \
+    gs://catnip-data/models/
 
 # 7. (Optional) Run inference on a held-out page to sanity-check
 python -m catnip extract \
@@ -242,3 +283,9 @@ with tempfile.TemporaryDirectory() as d:
 | mAP plateaus below 0.7 on tiny heads | imgsz drifted from slice size | Re-check `training.stage1.imgsz == params.sahi.slice_height`. |
 | Colab OOM | Batch too large for T4 | The OOM retry in `scripts/train/stage1.py` drops to batch=4 then 2. |
 | Val mAP much lower than train mAP | Train/val drift in slice parameters | Re-run `unify/stage1.py --slice` with the same `params.sahi.*`. |
+| Kaggle: accelerators greyed out | Phone not verified or weekly quota hit | Verify phone at kaggle.com/settings; check kaggle.com/me/quota. |
+| Kaggle: `No module named 'kaggle_secrets'` | Internet OFF in notebook session | Toggle Internet ON in the right sidebar and re-run cell 1. |
+| Kaggle: `OSError: [Errno 28] No space left` at end of session | 20 GB cap reached by per-split `.cache` files | `kaggle_publish.py` strips caches automatically; if it still fails, raise `cache: false` in `model.train()` and re-run. |
+| Kaggle: model disappeared after session | Forgot Cell 3 (or it failed) | Re-run Cell 3 against the most recent `catnip-stage1-output` version; the model is recoverable. |
+| Kaggle: `401 Unauthorized` from `kaggle datasets create` | Token expired or scoped read-only | Re-generate the API token at kaggle.com/settings; secrets are read-only, write to KAGGLE_KEY requires a fresh token. |
+| Kaggle: dataset upload stalls on 14 GB | Resumable upload — `kaggle` CLI auto-retries up to 10× | Wait; if it stays stalled for >30 min, re-run `kaggle_sync.py` (the API resumes from the last successful chunk). |

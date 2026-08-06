@@ -8,8 +8,6 @@ version = "0.2.0"
 [pypi-options]
 extra-index-urls = ["https://download.pytorch.org/whl/xpu"]
 
-[tasks]
-
 [dependencies]
 python = "3.11.*"
 numpy = "<2"
@@ -43,3 +41,62 @@ torchaudio = "==2.6.0+xpu"
 pytorch = "==2.4.1"
 torchvision = "==0.19.1"
 
+# ---------------------------------------------------------------------------
+# Optional feature: kaggle CLI for sync/publish scripts.
+#
+# Activate with:  pixi run -e kaggle kaggle-sync
+# Add to default env:  pixi project channel add conda-forge
+#                      pixi add kaggle  (or  pixi add kaggle --feature kaggle)
+# ---------------------------------------------------------------------------
+[feature.kaggle.pypi-dependencies]
+kaggle = ">=1.6,<2"
+kagglehub = ">=0.3,<1"
+
+[environments]
+# kaggle env stacks the default deps + the kaggle feature.  Used by the
+# kaggle-sync / kaggle-publish tasks.  Training and inference stay in
+# the default env.
+kaggle = ["kaggle"]
+
+# ---------------------------------------------------------------------------
+# Tasks
+#
+# Conventions:
+#   * all paths are relative to the project root (pixi runs tasks there)
+#   * pass-through args: `pixi run <task> -- <extra args>` appends to cmd
+#   * `kaggle-*` tasks require `-e kaggle` (kaggle/kagglehub not in default)
+# ---------------------------------------------------------------------------
+[tasks]
+# --- Unify pipeline (data prep, runs on the dev machine) ---
+# Pass-through: `pixi run <task> -- <extra args>` appends to the cmd.
+unify-izutsumi  = "python scripts/unify/izutsumi.py"
+unify-manga109  = "python scripts/unify/manga109.py"
+unify-coco-heads = "python scripts/unify/coco_heads.py --input-dir catnip-data/data/AnimeHeadsv3 --output-dir catnip-data/data/staging/ah_coco"
+unify-yolo-heads = "python scripts/unify/yolo_heads.py"
+unify-stage1    = "python scripts/unify/stage1.py --slice --slice-workers 4"
+
+# Convenience: full data-prep pipeline (unify + slice).  No command of its
+# own — `depends-on` runs each task in order.
+data-prep = { depends-on = [
+    "unify-izutsumi",
+    "unify-manga109",
+    "unify-coco-heads",
+    "unify-yolo-heads",
+    "unify-stage1",
+] }
+
+# --- Training (runs in pixi env; device selected via config/CLI) ---
+train-stage1 = "python scripts/train/stage1.py"
+train-stage2 = "python scripts/train/stage2.py"
+
+# --- GCS bucket hygiene ---
+reorganize-gcs = "python scripts/reorganize_gcs.py"
+
+# --- Kaggle sync (local/GCS/R2 → Kaggle dataset version) ---
+# Requires the kaggle env for the kaggle CLI:  pixi run -e kaggle kaggle-sync
+kaggle-sync = "python scripts/kaggle_sync.py"
+
+# --- Kaggle publish (notebook session → catnip-stage1-output dataset) ---
+# This is what the third cell of notebooks/catnipKaggle.ipynb calls.
+# Locally:  pixi run -e kaggle kaggle-publish -- --output-dir ...
+kaggle-publish = "python scripts/kaggle_publish.py"

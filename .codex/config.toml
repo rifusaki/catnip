@@ -1,0 +1,13 @@
+[mcp_servers.gcp-mcp]
+command = "npx"
+args = [ "-y", "gcp-mcp",]
+id = ""
+
+[mcp_servers.gcp-tools]
+command = "npx"
+args = [ "-y", "gcp-tools-mcp",]
+id = ""
+
+[mcp_servers.gcp-mcp.env]
+
+[mcp_servers.gcp-tools.env]
