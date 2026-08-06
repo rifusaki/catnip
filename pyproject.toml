@@ -32,9 +32,8 @@ dependencies = [
 catnip = "src.cli:main"
 
 [project.optional-dependencies]
-# Kaggle sync and publish
+# Kaggle upload (via kagglehub)
 kaggle = [
-    "kaggle>=1.6,<2",
     "kagglehub>=0.3,<1",
 ]
 

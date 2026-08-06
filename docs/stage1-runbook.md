@@ -166,9 +166,9 @@ pixi run unify-yolo-heads
 # 3. Merge + slice for SAHI parity
 pixi run unify-stage1              # = python scripts/unify/stage1.py --slice --slice-workers 4
 
-# 4. Sync sliced dataset to GCS + Kaggle in one shot
-#    (rsyncs to gs://catnip-data/training/stage1_sliced/ AND creates/versionizes
-#    the private Kaggle dataset `catnip-stage1-sliced`).
+# 4. Sync sliced dataset to Kaggle (creates a new version of the private
+#    Kaggle dataset `catnip-stage1-sliced`; GCS sync is separate below).
+#    Requires KAGGLE_API_TOKEN in .env (from kaggle.com/settings/api).
 pixi run -e kaggle kaggle-sync
 
 # 5. Sync the pretrained YOLO26n to GCS (one-time, if not already there)
@@ -180,10 +180,12 @@ gsutil cp catnip-data/models/yolo26n.pt gs://catnip-data/models/yolo26n.pt
 Once-per-account setup:
 
 1. Verify phone number at kaggle.com/settings (required for GPU access).
-2. Add Kaggle Secrets: `KAGGLE_USERNAME`, `KAGGLE_KEY` (from
-   kaggle.com/settings → "Create New Token").
-3. Upload the `catnip-stage1-sliced` dataset version (done by step A.4
-   above) and attach it in the notebook sidebar.
+2. Generate API token at kaggle.com/settings/api → "Generate New Token".
+   Add it as a Kaggle Secret named `KAGGLE_API_TOKEN`
+   (Add-ons → Secrets in the notebook sidebar).
+3. Create the private dataset `catnip-stage1-sliced` via the Kaggle web
+   UI (one-time), then run step A.4 to push the first version. In the
+   notebook sidebar, attach the dataset under "Add data".
 
 Per-session:
 
@@ -193,12 +195,13 @@ Per-session:
 # 3. Add data: catnip-stage1-sliced (and, for resume, the most recent
 #    catnip-stage1-output version).
 # 4. Run all three cells.
-#    - Cell 1: install deps, hydrate secrets, clone repo, set CATNIP_DATA.
+#    - Cell 1: install deps, hydrate KAGGLE_API_TOKEN secret, clone repo,
+#      copy the sliced dataset to /kaggle/working/, set CATNIP_DATA.
 #    - Cell 2: trains 24 epochs at batch=64 (≈12 h); resumes from last.pt
 #      if present in /kaggle/working/catnip-data-local/runs/detect/stage1/.
 #    - Cell 3: publishes the model + run to a new `catnip-stage1-output`
-#      version (private). /kaggle/working/ is wiped at session end —
-#      this is the only way to keep the artifact.
+#      version (private) via kagglehub. /kaggle/working/ is wiped at
+#      session end — this is the only way to keep the artifact.
 
 # To resume after the 12 h cap, re-attach the latest catnip-stage1-output
 # as a second dataset, copy its weights/ into the canonical path, and
@@ -230,8 +233,13 @@ predictable quota; sessions can be terminated without notice.
 
 ```bash
 # 6. Pull the trained model from the Kaggle output dataset
-kaggle datasets download catnip-stage1-output -p /tmp/catnip-out --unzip
-cp /tmp/catnip-out/models/yolo26_stage1_body_head_face.pt catnip-data/models/
+python -c "
+import kagglehub
+path = kagglehub.dataset_download('rifusaki/catnip-stage1-output')
+print(path)
+"
+# Then copy the model from the downloaded path to local/GCS
+cp <downloaded-path>/models/yolo26_stage1_body_head_face.pt catnip-data/models/
 gsutil cp catnip-data/models/yolo26_stage1_body_head_face.pt \
     gs://catnip-data/models/
 
@@ -287,5 +295,5 @@ with tempfile.TemporaryDirectory() as d:
 | Kaggle: `No module named 'kaggle_secrets'` | Internet OFF in notebook session | Toggle Internet ON in the right sidebar and re-run cell 1. |
 | Kaggle: `OSError: [Errno 28] No space left` at end of session | 20 GB cap reached by per-split `.cache` files | `kaggle_publish.py` strips caches automatically; if it still fails, raise `cache: false` in `model.train()` and re-run. |
 | Kaggle: model disappeared after session | Forgot Cell 3 (or it failed) | Re-run Cell 3 against the most recent `catnip-stage1-output` version; the model is recoverable. |
-| Kaggle: `401 Unauthorized` from `kaggle datasets create` | Token expired or scoped read-only | Re-generate the API token at kaggle.com/settings; secrets are read-only, write to KAGGLE_KEY requires a fresh token. |
-| Kaggle: dataset upload stalls on 14 GB | Resumable upload — `kaggle` CLI auto-retries up to 10× | Wait; if it stays stalled for >30 min, re-run `kaggle_sync.py` (the API resumes from the last successful chunk). |
+| Kaggle: `401 Unauthorized` or `UnauthenticatedError` | API token expired or not set | Re-generate KAGGLE_API_TOKEN at kaggle.com/settings/api; verify the secret/env var is present. |
+| Kaggle: dataset upload stalls on 14 GB | Network timeout on large dataset | Wait; if it stays stalled for >30 min, re-run `kaggle_sync.py` (kagglehub retries resume-ably). |

@@ -42,14 +42,12 @@ pytorch = "==2.4.1"
 torchvision = "==0.19.1"
 
 # ---------------------------------------------------------------------------
-# Optional feature: kaggle CLI for sync/publish scripts.
+# Optional feature: kagglehub for sync/publish scripts.
 #
 # Activate with:  pixi run -e kaggle kaggle-sync
-# Add to default env:  pixi project channel add conda-forge
-#                      pixi add kaggle  (or  pixi add kaggle --feature kaggle)
+# Auth: set KAGGLE_API_TOKEN in .env or env var
 # ---------------------------------------------------------------------------
 [feature.kaggle.pypi-dependencies]
-kaggle = ">=1.6,<2"
 kagglehub = ">=0.3,<1"
 
 [environments]
@@ -93,7 +91,7 @@ train-stage2 = "python scripts/train/stage2.py"
 reorganize-gcs = "python scripts/reorganize_gcs.py"
 
 # --- Kaggle sync (local/GCS/R2 → Kaggle dataset version) ---
-# Requires the kaggle env for the kaggle CLI:  pixi run -e kaggle kaggle-sync
+# Requires the kaggle env + KAGGLE_API_TOKEN:  pixi run -e kaggle kaggle-sync
 kaggle-sync = "python scripts/kaggle_sync.py"
 
 # --- Kaggle publish (notebook session → catnip-stage1-output dataset) ---

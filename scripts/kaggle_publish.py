@@ -15,25 +15,18 @@ silently.  Publishing to a private dataset is the only built-in way to
 make outputs persistent.
 
 Disk-budget housekeeping: the per-split ``*.cache`` files that Ultralytics
-generates for fast image access account for ~2.8 GB at imgsz=640 (they
-mirror the dataset into a flat-binary form).  They are derived state, not
-deliverables, and they are regenerated automatically on the next training
-session — so we delete them before upload.  A typical publish is
-< 50 MB (the trained ``best.pt`` + ``last.pt`` + the run's plots and CSV).
+generates under ``runs/detect/stage1/`` are stripped before upload (~2.8 GB).
 
 Prereqs (set by the notebook via Kaggle Secrets):
 
-* ``KAGGLE_USERNAME``, ``KAGGLE_KEY`` env vars.
-* ``kaggle`` CLI on $PATH (``pip install kaggle``).
-* the working dir must contain ``models/`` and ``runs/detect/stage1/``
-  (the standard layout that ``scripts/train/stage1.py`` writes to).
+    KAGGLE_API_TOKEN           # from https://www.kaggle.com/settings/api
 
 Usage (in a Kaggle notebook)::
 
     !python /kaggle/working/catnip/scripts/kaggle_publish.py \\
         --output-dir /kaggle/working/catnip-data-local \\
         --dataset-slug catnip-stage1-output \\
-        --version-notes "phase-A eval, 24 epochs, batch=64"
+        --version-notes "session $(date -u +%Y-%m-%dT%H:%MZ)"
 """
 
 from __future__ import annotations
@@ -43,9 +36,18 @@ import json
 import logging
 import os
 import shutil
-import subprocess
 import sys
 from pathlib import Path
+
+import kagglehub
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+DEFAULT_OUTPUT_DIR = Path("/kaggle/working/catnip-data-local")
+DEFAULT_STAGING_DIR = Path("/kaggle/working/catnip-stage1-output-staging")
+DEFAULT_DATASET_SLUG = "catnip-stage1-output"
 
 logger = logging.getLogger("kaggle_publish")
 
@@ -64,44 +66,37 @@ def _setup_logging(verbose: bool) -> None:
     )
 
 
-def _check_prereqs() -> int:
-    """Return non-zero if any required tool/env is missing."""
-    failed = 0
-    if shutil.which("kaggle") is None:
-        logger.error("kaggle CLI not found. `pip install kaggle` first.")
-        failed += 1
-    if not os.environ.get("KAGGLE_USERNAME") or not os.environ.get("KAGGLE_KEY"):
-        logger.error(
-            "KAGGLE_USERNAME / KAGGLE_KEY not in env. "
-            "Add them as Kaggle Secrets and load with kaggle_secrets.UserSecretsClient."
-        )
-        failed += 1
-    return failed
-
-
-def _materialize_kaggle_json() -> Path:
-    """Write ``~/.kaggle/kaggle.json`` from the KAGGLE_* env vars.
-
-    The Kaggle CLI refuses to read credentials from env vars; it insists
-    on the JSON file.  This bridges the two so the notebook only needs
-    to set env vars (which it does from Kaggle Secrets).
-    """
-    kaggle_dir = Path.home() / ".kaggle"
-    kaggle_json = kaggle_dir / "kaggle.json"
-    kaggle_dir.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "username": os.environ["KAGGLE_USERNAME"],
-        "key": os.environ["KAGGLE_KEY"],
-    }
-    kaggle_json.write_text(json.dumps(payload))
+def _resolve_handle(dataset_slug: str, allow_placeholder: bool = False) -> str:
+    """Return the full ``owner/slug`` handle."""
+    if "/" in dataset_slug:
+        return dataset_slug
     try:
-        kaggle_json.chmod(0o600)
-    except OSError:
-        # Some filesystems (e.g. Windows mounts in WSL) don't support chmod;
-        # kaggle still works with mode 644 in that case.
-        logger.debug("Could not chmod 0600 on %s; continuing.", kaggle_json)
-    logger.info("Wrote %s (mode 0600).", kaggle_json)
-    return kaggle_json
+        user = kagglehub.whoami(verbose=False)
+        return f"{user['username']}/{dataset_slug}"
+    except Exception:
+        if allow_placeholder:
+            return f"YOUR_USERNAME/{dataset_slug}"
+        logger.error(
+            "Could not resolve Kaggle username.  Set KAGGLE_API_TOKEN env var "
+            "or use the full owner/slug form."
+        )
+        sys.exit(1)
+
+
+def _check_prereqs(dry_run: bool = False) -> int:
+    """Return non-zero if any required env var is missing."""
+    if dry_run:
+        return 0
+    failed = 0
+    if not os.environ.get("KAGGLE_API_TOKEN"):
+        access_token_file = Path.home() / ".kaggle" / "access_token"
+        if not access_token_file.exists():
+            logger.error(
+                "KAGGLE_API_TOKEN not in env and ~/.kaggle/access_token not found. "
+                "Add KAGGLE_API_TOKEN as a Kaggle Secret and set it as an env var."
+            )
+            failed += 1
+    return failed
 
 
 def _strip_caches(root: Path) -> int:
@@ -125,8 +120,7 @@ def _pack_outputs(output_dir: Path, staging_dir: Path) -> None:
     """Copy models/ and runs/ into ``staging_dir`` for upload.
 
     We keep the directory layout (not a single zip) so the uploaded dataset
-    is human-browsable on kaggle.com.  ``--dir-mode zip`` is applied at
-    upload time to make the transfer a single archive.
+    is human-browsable on kaggle.com.
     """
     if staging_dir.exists():
         shutil.rmtree(staging_dir)
@@ -152,38 +146,18 @@ def _pack_outputs(output_dir: Path, staging_dir: Path) -> None:
     _strip_caches(staging_dir)
 
 
-def _kaggle_dataset_exists(slug: str) -> bool:
-    rc = subprocess.call(
-        ["kaggle", "datasets", "status", slug],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    return rc == 0
-
-
-def _upload(staging_dir: Path, slug: str, version_notes: str, dry_run: bool) -> int:
-    exists = _kaggle_dataset_exists(slug)
-    if exists:
-        logger.info("Versioning existing Kaggle dataset '%s'", slug)
-        cmd = [
-            "kaggle", "datasets", "version",
-            "-p", str(staging_dir),
-            "-m", version_notes,
-            "--dir-mode", "zip",
-        ]
-    else:
-        logger.info("Creating new Kaggle dataset '%s' (private)", slug)
-        cmd = [
-            "kaggle", "datasets", "create",
-            "-p", str(staging_dir),
-            "-u",
-            "--dir-mode", "zip",
-        ]
-    logger.info("$ %s", " ".join(cmd))
+def _upload(staging_dir: Path, handle: str, version_notes: str, dry_run: bool) -> int:
+    logger.info("Uploading to Kaggle dataset '%s' ...", handle)
     if dry_run:
-        print(" ".join(cmd))
+        print(f"# kagglehub.dataset_upload(handle='{handle}', "
+              f"local_dataset_dir='{staging_dir}', version_notes='{version_notes}')")
         return 0
-    return subprocess.call(cmd)
+    kagglehub.dataset_upload(
+        handle=handle,
+        local_dataset_dir=str(staging_dir),
+        version_notes=version_notes,
+    )
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -197,19 +171,20 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-dir", type=Path,
-        default=Path("/kaggle/working/catnip-data-local"),
+        default=DEFAULT_OUTPUT_DIR,
         help="Root that contains models/ and runs/ "
              "(default: /kaggle/working/catnip-data-local).",
     )
     parser.add_argument(
         "--staging-dir", type=Path,
-        default=Path("/kaggle/working/catnip-stage1-output-staging"),
+        default=DEFAULT_STAGING_DIR,
         help="Working dir for the upload "
              "(default: /kaggle/working/catnip-stage1-output-staging).",
     )
     parser.add_argument(
-        "--dataset-slug", default="catnip-stage1-output",
-        help="Target Kaggle dataset slug (default: catnip-stage1-output).",
+        "--dataset-slug", default=DEFAULT_DATASET_SLUG,
+        help="Target Kaggle dataset slug (default: catnip-stage1-output). "
+             "Use owner/slug to avoid resolving username.",
     )
     parser.add_argument(
         "--version-notes", default="auto-publish from notebook session",
@@ -229,15 +204,19 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     _setup_logging(args.verbose)
-    if _check_prereqs() != 0:
+    if _check_prereqs(dry_run=args.dry_run) != 0:
         return 1
-    _materialize_kaggle_json()
-    _pack_outputs(args.output_dir, args.staging_dir)
-    rc = _upload(args.staging_dir, args.dataset_slug, args.version_notes, args.dry_run)
+    handle = _resolve_handle(args.dataset_slug, allow_placeholder=args.dry_run)
+    if args.dry_run:
+        logger.info("Would pack outputs from %s → %s", args.output_dir, args.staging_dir)
+    else:
+        _pack_outputs(args.output_dir, args.staging_dir)
+    rc = _upload(args.staging_dir, handle, args.version_notes, args.dry_run)
     if rc == 0:
         logger.info(
-            "Done. Pull the artifact with: kaggle datasets download %s",
-            args.dataset_slug,
+            "Done. Download the artifact with: "
+            "kagglehub.dataset_download('%s')",
+            handle,
         )
     return rc
 

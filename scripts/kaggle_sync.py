@@ -9,16 +9,18 @@ expects the attached dataset to contain this layout:
     training/stage1_sliced/images/{train,val,test}/...
     training/stage1_sliced/labels/{train,val,test}/...
 
-This script builds that Kaggle payload shape, writes
-``dataset-metadata.json`` for the Kaggle CLI, then creates or versions the
-private dataset ``catnip-stage1-sliced``.
+This script builds that Kaggle payload shape and uploads it via kagglehub,
+creating a new dataset version each run.  The dataset must already exist on
+Kaggle (created once via the web UI).
+
+Auth uses the modern KAGGLE_API_TOKEN env var (or ~/.kaggle/access_token).
+Get the token from https://www.kaggle.com/settings/api → "Generate New Token".
 
 First-time import from the current GCS copy::
 
     python scripts/kaggle_sync.py \\
         --source-uri gs://catnip-data/training/stage1_sliced \\
         --staging-dir /Volumes/rifuSSD/catnip-kaggle-stage1-sliced \\
-        --expect-new \\
         --version-notes "initial import from GCS"
 
 Normal update from a freshly regenerated local dataset::
@@ -27,14 +29,13 @@ Normal update from a freshly regenerated local dataset::
         --source catnip-data/training/stage1_sliced \\
         --version-notes "post-slicing refresh"
 
-Optional archive mirror, if/when canonical storage moves to object storage::
+Optional archive mirror::
 
     python scripts/kaggle_sync.py \\
         --source catnip-data/training/stage1_sliced \\
         --archive-uri r2:catnip-canonical/training/stage1_sliced
 
-Use ``--dry-run`` to print the transfer and Kaggle commands without running
-them.  By default, this script does not write to GCS or R2.
+Use ``--dry-run`` to print the transfer plan without running it.
 """
 
 from __future__ import annotations
@@ -50,17 +51,30 @@ import sys
 import tempfile
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
+import kagglehub  # noqa: E402 (after load_dotenv to pick up KAGGLE_API_TOKEN from .env)
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_LOCAL_SOURCE = PROJECT_ROOT / "catnip-data" / "training" / "stage1_sliced"
+
+def _catnip_data_root() -> Path:
+    """Resolve the catnip-data root from ``CATNIP_DATA`` env var or default."""
+    env = os.environ.get("CATNIP_DATA")
+    if env:
+        return Path(env)
+    return PROJECT_ROOT / "catnip-data"
+
+DEFAULT_LOCAL_SOURCE = _catnip_data_root() / "training" / "stage1_sliced"
 DEFAULT_REMOTE_SOURCE = "gs://catnip-data/training/stage1_sliced"
 DEFAULT_DATASET_SUBDIR = Path("training") / "stage1_sliced"
 DEFAULT_STAGING_DIR = Path(tempfile.gettempdir()) / "catnip-kaggle-stage1-sliced"
 DEFAULT_KAGGLE_SLUG = "catnip-stage1-sliced"
-DEFAULT_KAGGLE_TITLE = "Catnip Stage 1 Sliced"
 STAGING_MARKER = ".catnip-kaggle-staging"
 
 logger = logging.getLogger("kaggle_sync")
@@ -81,7 +95,6 @@ def _setup_logging(verbose: bool) -> None:
 
 
 def _run(cmd: list[str], dry_run: bool) -> int:
-    """Run a subprocess, or print it in dry-run mode."""
     logger.debug("$ %s", shlex.join(cmd))
     if dry_run:
         print(shlex.join(cmd))
@@ -115,45 +128,39 @@ def _check_tool(tool: str) -> int:
     return 0
 
 
-def _read_kaggle_username() -> str | None:
-    if os.environ.get("KAGGLE_USERNAME"):
-        return os.environ["KAGGLE_USERNAME"]
-
-    kaggle_json = Path.home() / ".kaggle" / "kaggle.json"
-    if not kaggle_json.exists():
-        return None
-
-    try:
-        payload = json.loads(kaggle_json.read_text())
-    except (OSError, json.JSONDecodeError) as exc:
-        logger.warning("Could not read %s: %s", kaggle_json, exc)
-        return None
-
-    username = payload.get("username")
-    return str(username) if username else None
-
-
-def _dataset_ref(
+def _resolve_handle(
     kaggle_slug: str,
     owner: str | None,
     allow_placeholder: bool = False,
-) -> tuple[str, str]:
-    """Return (full dataset ref, bare slug)."""
+) -> str:
+    """Return the full ``owner/slug`` dataset handle."""
     if "/" in kaggle_slug:
-        dataset_owner, bare_slug = kaggle_slug.split("/", 1)
-        return f"{dataset_owner}/{bare_slug}", bare_slug
+        return kaggle_slug
 
-    dataset_owner = owner or _read_kaggle_username()
-    if not dataset_owner and allow_placeholder:
-        dataset_owner = "KAGGLE_USERNAME"
-    if not dataset_owner:
+    if owner:
+        return f"{owner}/{kaggle_slug}"
+
+    try:
+        user = kagglehub.whoami(verbose=False)
+        return f"{user['username']}/{kaggle_slug}"
+    except Exception:
+        if allow_placeholder:
+            return f"YOUR_USERNAME/{kaggle_slug}"
         logger.error(
-            "Kaggle owner is unknown. Set KAGGLE_USERNAME, create "
-            "~/.kaggle/kaggle.json, or pass --kaggle-owner."
+            "Could not resolve Kaggle username.  Either pass --kaggle-owner, "
+            "set KAGGLE_API_TOKEN, or create ~/.kaggle/access_token."
         )
         sys.exit(1)
 
-    return f"{dataset_owner}/{kaggle_slug}", kaggle_slug
+
+def _has_api_token() -> bool:
+    """Check whether a Kaggle API token is available."""
+    if os.environ.get("KAGGLE_API_TOKEN"):
+        return True
+    access_token_file = Path.home() / ".kaggle" / "access_token"
+    if access_token_file.exists():
+        return True
+    return False
 
 
 def _check_prereqs(args: argparse.Namespace) -> int:
@@ -169,18 +176,13 @@ def _check_prereqs(args: argparse.Namespace) -> int:
     for archive_uri in args.archive_uri:
         failed += _check_tool(_tool_for_uri(archive_uri))
 
-    if not args.skip_kaggle:
-        failed += _check_tool("kaggle")
-        kaggle_json = Path.home() / ".kaggle" / "kaggle.json"
-        env_creds = bool(os.environ.get("KAGGLE_USERNAME")) and bool(
-            os.environ.get("KAGGLE_KEY")
+    if not args.skip_kaggle and not _has_api_token():
+        logger.error(
+            "Kaggle API token not found.  Set KAGGLE_API_TOKEN env var "
+            "or create ~/.kaggle/access_token with the token from "
+            "https://www.kaggle.com/settings/api"
         )
-        if not kaggle_json.exists() and not env_creds:
-            logger.error(
-                "Kaggle credentials not found. Provide either "
-                "~/.kaggle/kaggle.json or KAGGLE_USERNAME/KAGGLE_KEY env vars."
-            )
-            failed += 1
+        failed += 1
 
     return failed
 
@@ -271,32 +273,8 @@ def _copy_local_source(source: Path, dataset_root: Path, dry_run: bool) -> None:
     shutil.copytree(source, dataset_root, dirs_exist_ok=True)
 
 
-def _write_dataset_metadata(
-    staging_dir: Path,
-    dataset_ref: str,
-    title: str,
-    license_name: str,
-    dry_run: bool,
-) -> None:
-    metadata_path = staging_dir / "dataset-metadata.json"
-    payload = {
-        "title": title,
-        "id": dataset_ref,
-        "licenses": [{"name": license_name}],
-    }
-
-    if dry_run:
-        print(f"write {metadata_path}:")
-        print(json.dumps(payload, indent=2, sort_keys=True))
-        return
-
-    metadata_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
-    logger.info("Wrote Kaggle metadata: %s", metadata_path)
-
-
 def _prepare_staging(
     args: argparse.Namespace,
-    dataset_ref: str | None,
 ) -> tuple[Path, Path]:
     staging_dir = args.staging_dir.resolve()
     dataset_root = staging_dir / args.dataset_subdir
@@ -328,83 +306,29 @@ def _prepare_staging(
     if not args.dry_run:
         _validate_dataset_root(dataset_root)
 
-    if dataset_ref is not None:
-        _write_dataset_metadata(
-            staging_dir,
-            dataset_ref=dataset_ref,
-            title=args.title,
-            license_name=args.license_name,
-            dry_run=args.dry_run,
-        )
     return staging_dir, dataset_root
-
-
-def _kaggle_dataset_exists(dataset_ref: str) -> bool:
-    """True iff the dataset is already registered and accessible."""
-    rc = subprocess.call(
-        ["kaggle", "datasets", "status", dataset_ref],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    return rc == 0
 
 
 def _upload_to_kaggle(
     staging_dir: Path,
-    dataset_ref: str,
+    handle: str,
     version_notes: str,
-    expect_new: bool,
     dry_run: bool,
 ) -> None:
-    """Create the dataset on first run, or version it on subsequent runs."""
-    create_cmd = [
-        "kaggle",
-        "datasets",
-        "create",
-        "-p",
-        str(staging_dir),
-        "-u",
-        "--dir-mode",
-        "zip",
-    ]
-    version_cmd = [
-        "kaggle",
-        "datasets",
-        "version",
-        "-p",
-        str(staging_dir),
-        "-m",
-        version_notes,
-        "--dir-mode",
-        "zip",
-    ]
-
+    """Upload the staged dataset to Kaggle using kagglehub."""
     if dry_run:
-        print(shlex.join(["kaggle", "datasets", "status", dataset_ref]))
-        print("# If the dataset does not exist:")
-        print(shlex.join(create_cmd))
-        print("# If the dataset already exists:")
-        print(shlex.join(version_cmd))
+        print(f"# kagglehub.dataset_upload(handle='{handle}', "
+              f"local_dataset_dir='{staging_dir}', version_notes='{version_notes}')")
         return
 
-    exists = _kaggle_dataset_exists(dataset_ref)
-    if expect_new and exists:
-        logger.error(
-            "Dataset %s already exists, but --expect-new was set.", dataset_ref
-        )
-        sys.exit(1)
-
-    if exists:
-        logger.info("Versioning existing Kaggle dataset '%s'", dataset_ref)
-        cmd = version_cmd
-    else:
-        logger.info("Creating new private Kaggle dataset '%s'", dataset_ref)
-        cmd = create_cmd
-
-    rc = _run(cmd, dry_run=False)
-    if rc != 0:
-        logger.error("Kaggle upload failed (exit %d).", rc)
-        sys.exit(rc)
+    logger.info("Uploading to Kaggle dataset '%s' ...", handle)
+    kagglehub.dataset_upload(
+        handle=handle,
+        local_dataset_dir=str(staging_dir),
+        version_notes=version_notes,
+        ignore_patterns=[STAGING_MARKER, "__pycache__/"],
+    )
+    logger.info("Upload complete: %s", handle)
 
 
 def _archive_dataset(
@@ -480,24 +404,9 @@ def parse_args() -> argparse.Namespace:
         "--kaggle-owner",
         default=None,
         help=(
-            "Kaggle username for dataset-metadata.json. Defaults to "
-            "KAGGLE_USERNAME or ~/.kaggle/kaggle.json."
+            "Kaggle username for the dataset handle. "
+            "Defaults to the authenticated user from kagglehub.whoami()."
         ),
-    )
-    parser.add_argument(
-        "--title",
-        default=DEFAULT_KAGGLE_TITLE,
-        help=f"Kaggle dataset title (default: {DEFAULT_KAGGLE_TITLE}).",
-    )
-    parser.add_argument(
-        "--license-name",
-        default="unknown",
-        help="Kaggle license name for dataset-metadata.json (default: unknown).",
-    )
-    parser.add_argument(
-        "--expect-new",
-        action="store_true",
-        help="Fail if the Kaggle dataset already exists.",
     )
     parser.add_argument(
         "--skip-kaggle",
@@ -563,24 +472,23 @@ def main() -> int:
     if _check_prereqs(args) != 0:
         return 1
 
-    dataset_ref = (
+    handle = (
         None
         if args.skip_kaggle
-        else _dataset_ref(
+        else _resolve_handle(
             args.kaggle_slug,
             args.kaggle_owner,
             allow_placeholder=args.dry_run,
-        )[0]
+        )
     )
-    staging_dir, dataset_root = _prepare_staging(args, dataset_ref)
+    staging_dir, dataset_root = _prepare_staging(args)
 
     if not args.skip_kaggle:
-        assert dataset_ref is not None
+        assert handle is not None
         _upload_to_kaggle(
             staging_dir=staging_dir,
-            dataset_ref=dataset_ref,
+            handle=handle,
             version_notes=args.version_notes,
-            expect_new=args.expect_new,
             dry_run=args.dry_run,
         )
 

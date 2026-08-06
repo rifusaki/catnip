@@ -68,7 +68,7 @@ Three-tier compute distribution reflecting professional ML engineering patterns:
 
 - **Storage:** Google Cloud Storage bucket `catnip-data` is the *canonical archive*; Kaggle Datasets (`catnip-stage1-sliced`, `catnip-stage1-output`) are the *training cache*.  The pixi task `kaggle-sync` (run on the dev machine after `scripts/unify/stage1.py --slice`) keeps both in sync.  Cloudflare R2 migration deferred until home server API goes live (avoids egress costs for Label Studio + API traffic).
 - **Label Studio:** Self-hosted at `label.rifusaki.com` (project 2). Images imported from GCS URLs. Exports JSON with bounding box annotations.
-- **Why Kaggle over Colab:** 30 h/week hard cap with a visible counter replaces Colab's arbitrary, unannounced throttling.  Sequential dataset versioning (`kaggle datasets version`) makes resumed training sessions simpler than the Colab tarball re-upload dance.  12 h session cap is the trade-off, handled by `scripts/train/stage1.py --resume` plus publishing the run to `catnip-stage1-output` at session end.
+- **Why Kaggle over Colab:** 30 h/week hard cap with a visible counter replaces Colab's arbitrary, unannounced throttling.  Sequential dataset versioning via kagglehub makes resumed training sessions simpler than the Colab tarball re-upload dance.  12 h session cap is the trade-off, handled by `scripts/train/stage1.py --resume` plus publishing the run to `catnip-stage1-output` at session end.
 
 ## 5. Codebase Status
 
