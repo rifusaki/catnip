@@ -17,3 +17,12 @@ catnip-data/
 
 # CocoIndex Code (ccc)
 /.cocoindex_code/
+
+# tool / local state
+.opencode/
+.wrangler/
+node_modules/
+*.egg-info/
+vibe-recovery-*.md
+uv.lock
+nsfw_report.json
