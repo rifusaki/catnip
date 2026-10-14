@@ -15,12 +15,5 @@ dependencies:
     args:
     - -y
     - gcp-mcp
-  - name: gcp-tools
-    registry: false
-    transport: stdio
-    command: npx
-    args:
-    - -y
-    - gcp-tools-mcp
 includes: auto
 scripts: {}

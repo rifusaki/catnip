@@ -35,12 +35,25 @@ Optional archive mirror::
         --source catnip-data/training/stage1_sliced \\
         --archive-uri r2:catnip-canonical/training/stage1_sliced
 
+Check the server-side processing status of an uploaded dataset (exits 0 when
+READY, 1 when FAILED, 2 when still processing, 3 when DELETED)::
+
+    python scripts/kaggle_sync.py --check-status --kaggle-slug catnip-stage1-v5
+
+Poll for processing completion (loops until terminal state, prints timestamped
+status)::
+
+    python scripts/kaggle_sync.py --check-status --kaggle-slug catnip-stage1-v5 \\
+        --poll --poll-interval 60
+
 Use ``--dry-run`` to print the transfer plan without running it.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
+import datetime
 import json
 import logging
 import os
@@ -49,7 +62,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -76,6 +91,20 @@ DEFAULT_DATASET_SUBDIR = Path("training") / "stage1_sliced"
 DEFAULT_STAGING_DIR = Path(tempfile.gettempdir()) / "catnip-kaggle-stage1-sliced"
 DEFAULT_KAGGLE_SLUG = "catnip-stage1-sliced"
 STAGING_MARKER = ".catnip-kaggle-staging"
+
+# macOS / editor droppings that Kaggle's backend validator silently rejects
+# (see https://github.com/Kaggle/kaggle-cli/issues/430). Scrubbed from the
+# staged tree before upload and also passed as ignore_patterns as a belt +
+# suspenders measure.
+SCRUB_PATTERNS = ["__pycache__/", ".DS_Store", "__MACOSX/", ".AppleDouble", "._*", "*.lock"]
+
+# Pre-zip payload subdir (sibling of --dataset-subdir). When --pre-zip is active, the
+# actual upload root becomes <staging>/<PAYLOAD_DIR_NAME>/ which contains
+# {dataset.yaml, archive.zip}. Two files → kagglehub never triggers its >50-files
+# auto-zip path; Kaggle unzips archive.zip server-side; YOLO layout is preserved.
+PAYLOAD_DIR_NAME = ".kaggle-payload"
+ARCHIVE_NAME = "archive.zip"
+KAGGLE_URL_BASE = "https://www.kaggle.com/datasets"
 
 logger = logging.getLogger("kaggle_sync")
 
@@ -187,6 +216,25 @@ def _check_prereqs(args: argparse.Namespace) -> int:
     return failed
 
 
+def _find_unsafe_names(dataset_root: Path) -> list[str]:
+    """Return relative paths whose filename has chars Kaggle silently rejects.
+
+    A name is safe iff every character is alphanumeric or one of ``._-``.
+    Anything else (apostrophe, space, ``&``, non-ASCII, ...) causes Kaggle's
+    backend validator to fail the entire upload without surfacing an error.
+    """
+    allowed = frozenset(
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+    )
+    unsafe: list[str] = []
+    for path in sorted(dataset_root.rglob("*")):
+        if path.is_dir():
+            continue
+        if any(ch not in allowed for ch in path.name):
+            unsafe.append(str(path.relative_to(dataset_root)))
+    return unsafe
+
+
 def _validate_dataset_root(dataset_root: Path) -> None:
     """Refuse to upload anything that does not look like a YOLO dataset root."""
     if not dataset_root.exists():
@@ -214,6 +262,24 @@ def _validate_dataset_root(dataset_root: Path) -> None:
         sys.exit(1)
     if not any(labels_dir.rglob("*")):
         logger.error("labels/ is empty under %s.", dataset_root)
+        sys.exit(1)
+
+    unsafe = _find_unsafe_names(dataset_root)
+    if unsafe:
+        logger.error(
+            "Found %d filename(s) with characters Kaggle silently rejects "
+            "(apostrophes, spaces, &, non-ASCII, ...). These kill the whole "
+            "upload with no error surfaced (see kaggle-api #430/#524).",
+            len(unsafe),
+        )
+        for name in unsafe[:10]:
+            logger.error("  unsafe: %s", name)
+        if len(unsafe) > 10:
+            logger.error("  ... and %d more", len(unsafe) - 10)
+        logger.error(
+            "Run scripts/unify/sanitize_names.py to rename to safe, deterministic "
+            "names, then point --source at the sanitized output."
+        )
         sys.exit(1)
 
 
@@ -273,6 +339,297 @@ def _copy_local_source(source: Path, dataset_root: Path, dry_run: bool) -> None:
     shutil.copytree(source, dataset_root, dirs_exist_ok=True)
 
 
+def _scrub_staging(dataset_root: Path, dry_run: bool) -> int:
+    """Remove macOS / editor cruft that causes Kaggle to silently fail processing.
+
+    Returns the number of files removed. Walks the tree bottom-up so directory
+    removals under __MACOSX/ don't trip the walker.
+    """
+    removed = 0
+    if dry_run:
+        logger.info("Would scrub patterns %s under %s", SCRUB_PATTERNS, dataset_root)
+        return 0
+
+    for path in sorted(dataset_root.rglob("*"), reverse=True):
+        name = path.name
+        kill = (
+            name == ".DS_Store"
+            or name == ".AppleDouble"
+            or name == "__pycache__"  # mirror the ignore_patterns entry
+            or name == "__MACOSX"  # dirs singleton, handle below
+            or name.startswith("._")  # dot-underscore AppleDouble siblings
+            or name.endswith(".lock")
+        )
+        if not kill:
+            continue
+        try:
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+            removed += 1
+            logger.debug("scrubbed %s", path)
+        except FileNotFoundError:
+            pass
+    return removed
+
+
+def _pre_zip_staging(
+    staging_dir: Path,
+    dataset_subdir: Path,
+    payload_dir: Path,
+    dry_run: bool,
+) -> Path:
+    """Pre-build a single archive.zip from the staged YOLO tree using ``zip -r -X``.
+
+    Strips macOS extended attributes that produce @PaxHeader / __MACOSX / ._appleSibling
+    entries inside the zip (Kaggle's backend validator silently rejects these).
+
+    The whole *dataset_subdir* (e.g. ``training/stage1_sliced``) is archived with its
+    path prefix preserved, so after Kaggle unzips server-side the dataset root layout
+    is unchanged::
+
+        training/stage1_sliced/dataset.yaml
+        training/stage1_sliced/images/{train,val,test}/...
+        training/stage1_sliced/labels/{train,val,test}/...
+
+    Returns payload_dir. With a single archive.zip at the payload root, kagglehub's
+    >50-files auto-zip is bypassed (the auto-zip path uses Python's zipfile.ZipFile
+    without -X and so reintroduces macOS xattr noise — we pre-zip cleanly instead).
+    """
+    if dry_run:
+        logger.info("Would pre-zip %s -> %s", dataset_subdir, payload_dir)
+        return payload_dir
+
+    payload_dir.mkdir(parents=True, exist_ok=True)
+
+    archive_path = payload_dir / ARCHIVE_NAME
+    cmd = ["zip", "-r", "-X", str(archive_path), str(dataset_subdir)]
+    logger.info("Pre-zipping %s -> %s (zip -r -X)", dataset_subdir, archive_path)
+    rc = subprocess.call(cmd, cwd=str(staging_dir))
+    if rc != 0:
+        logger.error("zip -r -X failed (exit %d).", rc)
+        sys.exit(rc)
+
+    size_mb = archive_path.stat().st_size / (1024 * 1024)
+    logger.info(
+        "Pre-zip complete. Payload root: %s, archive size: %.1f MB",
+        payload_dir, size_mb,
+    )
+    return payload_dir
+
+
+@contextlib.contextmanager
+def _capture_kaggle_create_responses():
+    """Monkey-patch kagglesdk's DatasetApiClient.create_dataset and
+    .create_dataset_version to capture the responses that kagglehub v1.0.2's
+    handle_mutate_call silently discards.
+
+    kagglehub v1.0.2 _create_dataset calls::
+
+        handle_mutate_call(lambda: api_client.datasets.dataset_api_client.create_dataset(r))
+
+    The lambda's return value (ApiCreateDatasetResponse with .status / .error /
+    .invalid_tags) is thrown away by handle_mutate_call. This patch wraps the underlying
+    kagglesdk method to stash the response in a dict, surfaces it to the caller, and lets
+    handle_mutate_call keep doing whatever it does (including raising on HTTP errors).
+
+    Captured dict shape:
+        {"create": ApiCreateDatasetResponse | None,
+         "version": ApiCreateDatasetResponse | None,
+         "exception": Exception | None}
+    """
+    captured: dict[str, Any] = {"create": None, "version": None, "exception": None}
+    try:
+        from kagglesdk.datasets.services.dataset_api_service import DatasetApiClient
+    except ImportError as e:
+        logger.warning(
+            "Could not import kagglesdk.DatasetApiClient (%s); "
+            "kagglehub v1.0.2 silent-failure bug is unmitigated this run.",
+            e,
+        )
+        yield captured
+        return
+
+    original_create = DatasetApiClient.create_dataset
+    original_version = DatasetApiClient.create_dataset_version
+
+    def _wrap(fn, key):
+        def wrapper(self, request):
+            try:
+                response = fn(self, request)
+                captured[key] = response
+                return response
+            except Exception as e:
+                captured["exception"] = e
+                raise
+        return wrapper
+
+    DatasetApiClient.create_dataset = _wrap(original_create, "create")
+    DatasetApiClient.create_dataset_version = _wrap(original_version, "version")
+    try:
+        yield captured
+    finally:
+        DatasetApiClient.create_dataset = original_create
+        DatasetApiClient.create_dataset_version = original_version
+
+
+def _check_dataset_status(handle: str, poll: bool, interval_s: int) -> int:
+    """Query Kaggle for the processing status of the latest version of a dataset.
+
+    Calls kaggle.datasets.dataset_api_client.get_dataset_status which returns a
+    DatabundleVersionStatus enum (NOT_YET_PERSISTED, BLOBS_RECEIVED,
+    BLOBS_DECOMPRESSED, BLOBS_COPIED_TO_SDS, INDIVIDUAL_BLOBS_COMPRESSED,
+    READY, FAILED, DELETED, REPROCESSING).
+
+    Exit codes:
+        0 — READY
+        1 — FAILED
+        2 — non-terminal (still processing)
+        3 — DELETED
+    """
+    from kagglehub.handle import parse_dataset_handle
+    from kagglehub.clients import build_kaggle_client
+    from kagglesdk.datasets.types.dataset_api_service import (
+        ApiGetDatasetStatusRequest,
+        ApiGetDatasetRequest,
+    )
+
+    h = parse_dataset_handle(handle)
+
+    def _stamp(msg: str) -> None:
+        print(f"{datetime.datetime.now().isoformat(timespec='seconds')}  {msg}")
+
+    def _current_version_number(api_client) -> int | None:
+        """Return current_version_number via /view, or None if unavailable.
+
+        /view (GetDataset) is the source of truth for whether a dataset has a
+        successfully-processed version. Returns None both when the slug doesn't
+        exist yet (still uploading) and when it is a zombie (placeholder entry,
+        no successful version).
+        """
+        vr = ApiGetDatasetRequest()
+        vr.owner_slug = h.owner
+        vr.dataset_slug = h.dataset
+        try:
+            resp = api_client.datasets.dataset_api_client.get_dataset(vr)
+            return resp.current_version_number
+        except Exception:
+            return None
+
+    while True:
+        status_name: str | None = None
+        with build_kaggle_client() as api_client:
+            try:
+                sr = ApiGetDatasetStatusRequest()
+                sr.owner_slug = h.owner
+                sr.dataset_slug = h.dataset
+                resp = api_client.datasets.dataset_api_client.get_dataset_status(sr)
+                status_name = resp.status.name
+                _stamp(f"status={status_name}")
+            except Exception as e:
+                # GetDatasetStatus raises 403/404 while the dataset is still
+                # uploading, is a zombie, or has left the in-flight window
+                # (READY). In all cases, /view's current_version_number is the
+                # authoritative signal. Don't treat an exception as terminal —
+                # keep polling if requested.
+                cvn = _current_version_number(api_client)
+                if cvn:
+                    _stamp(f"READY (/status unavailable, /view current_version_number={cvn})")
+                    return 0
+                _stamp(
+                    f"not yet accessible (/status {type(e).__name__}, "
+                    "no version via /view) — still uploading or processing"
+                )
+
+        if status_name is not None:
+            if status_name == "READY":
+                return 0
+            if status_name == "FAILED":
+                return 1
+            if status_name == "DELETED":
+                return 3
+            # else: non-terminal (NOT_YET_PERSISTED / BLOBS_* / REPROCESSING)
+
+        if not poll:
+            return 2
+
+        time.sleep(interval_s)
+
+
+def _check_slug_availability(
+    handle: str,
+    allow_existing: bool,
+    force_resume_zombie: bool,
+) -> int:
+    """Pre-flight check: is the target slug safe to upload to?
+
+    Kaggle's /view (GetDataset) returns 403/404 for ANY slug we can't access,
+    including brand-new slugs — it hides existence, so a 403/404 cannot
+    distinguish "fresh" from "zombie". We therefore only block on an
+    unambiguous 200 response:
+      - current_version_number set  -> dataset already exists (block unless --allow-existing)
+      - current_version_number None -> zombie placeholder (block unless --force-resume-zombie)
+
+    Returns:
+        0 — proceed (fresh slug, or existing allowed via flag)
+        2 — existing dataset with a version (refused without --allow-existing)
+        1 — zombie (refused without --force-resume-zombie)
+    """
+    from kagglehub.handle import parse_dataset_handle
+    from kagglehub.clients import build_kaggle_client
+    from kagglesdk.datasets.types.dataset_api_service import ApiGetDatasetRequest
+
+    h = parse_dataset_handle(handle)
+
+    try:
+        with build_kaggle_client() as api_client:
+            vr = ApiGetDatasetRequest()
+            vr.owner_slug = h.owner
+            vr.dataset_slug = h.dataset
+            resp = api_client.datasets.dataset_api_client.get_dataset(vr)
+            cvn = resp.current_version_number
+    except Exception as e:
+        msg = str(e).lower()
+        if "403" in msg or "forbidden" in msg or "404" in msg or "not found" in msg:
+            # Fresh or unknown slug — Kaggle hides existence via 403/404, so
+            # there is nothing to guard against here. Proceed and let the
+            # upload itself surface any real conflict.
+            logger.info("Slug %s not visible via /view (fresh or unknown); proceeding.", handle)
+            return 0
+        raise
+
+    if cvn:
+        if allow_existing:
+            logger.warning(
+                "Dataset %s already exists with current_version_number=%s; "
+                "creating a new version (use --no-allow-existing to refuse).",
+                handle, cvn,
+            )
+            return 0
+        logger.error(
+            "Dataset %s already exists with current_version_number=%s. "
+            "Use --allow-existing to create a new version, or use a different --kaggle-slug.",
+            handle, cvn,
+        )
+        return 2
+
+    # 200 with current_version_number=None — registry placeholder with no successful version
+    if force_resume_zombie:
+        logger.warning(
+            "Dataset %s is a zombie (current_version_number=None); "
+            "--force-resume-zombie set, proceeding (likely to fail).",
+            handle,
+        )
+        return 0
+    logger.error(
+        "Dataset %s exists in zombie state (current_version_number=None). "
+        "Use a fresh --kaggle-slug, or --force-resume-zombie to attempt anyway.",
+        handle,
+    )
+    return 1
+
+
 def _prepare_staging(
     args: argparse.Namespace,
 ) -> tuple[Path, Path]:
@@ -304,18 +661,27 @@ def _prepare_staging(
         _copy_local_source(source, dataset_root, args.dry_run)
 
     if not args.dry_run:
+        removed = _scrub_staging(dataset_root, args.dry_run)
+        if removed:
+            logger.info("Scrubbed %d macOS/editor cruft file(s) from staging.", removed)
         _validate_dataset_root(dataset_root)
 
     return staging_dir, dataset_root
 
 
-def _upload_to_kaggle(
+def _upload_to_kaggle_legacy(
     staging_dir: Path,
     handle: str,
     version_notes: str,
     dry_run: bool,
 ) -> None:
-    """Upload the staged dataset to Kaggle using kagglehub."""
+    """Upload the staged dataset using kagglehub's dataset_upload (legacy mode).
+
+    NOTE: kagglehub v1.0.2 silently discards the ApiCreateDatasetResponse.error field,
+    so a backend rejection looks identical to success. Prefer --upload-backend verbose
+    (the default) which surfaces the real error. Use this legacy mode only if the verbose
+    backend breaks against a newer kagglesdk.
+    """
     if dry_run:
         print(f"# kagglehub.dataset_upload(handle='{handle}', "
               f"local_dataset_dir='{staging_dir}', version_notes='{version_notes}')")
@@ -326,9 +692,74 @@ def _upload_to_kaggle(
         handle=handle,
         local_dataset_dir=str(staging_dir),
         version_notes=version_notes,
-        ignore_patterns=[STAGING_MARKER, "__pycache__/"],
+        ignore_patterns=[STAGING_MARKER, *SCRUB_PATTERNS],
     )
     logger.info("Upload complete: %s", handle)
+
+
+def _upload_to_kaggle_verbose(
+    upload_dir: Path,
+    handle: str,
+    version_notes: str,
+    dry_run: bool,
+) -> None:
+    """Upload to Kaggle using kagglehub's GCS upload + a wrapped kagglesdk create_dataset
+    call that surfaces ApiCreateDatasetResponse.status / .error / .invalid_tags.
+
+    kagglehub v1.0.2's dataset_upload discards those fields and prints a hardcoded
+    "Your dataset has been created. Files are being processed..." message regardless
+    of the actual server response. This wrapper intercepts the response and aborts
+    with the real error if Kaggle's synchronous validator rejected the upload.
+    """
+    if dry_run:
+        print(
+            f"# kagglehub.dataset_upload(handle='{handle}', "
+            f"local_dataset_dir='{upload_dir}', version_notes='{version_notes}') "
+            f"[verbose: response captured]"
+        )
+        return
+
+    logger.info("Uploading to Kaggle dataset '%s' (verbose backend) ...", handle)
+    with _capture_kaggle_create_responses() as captured:
+        kagglehub.dataset_upload(
+            handle=handle,
+            local_dataset_dir=str(upload_dir),
+            version_notes=version_notes,
+            ignore_patterns=[STAGING_MARKER, *SCRUB_PATTERNS],
+        )
+
+    resp = captured.get("create") or captured.get("version")
+    err = captured.get("exception")
+
+    if err is not None:
+        logger.error("Kaggle create_dataset() raised: %s", err)
+        raise err
+
+    if resp is None:
+        # Shouldn't happen unless kagglesdk signature changed. Fall back to legacy message.
+        logger.warning(
+            "Could not capture ApiCreateDatasetResponse (kagglesdk signature changed?). "
+            "Falling back to kagglehub's canned status."
+        )
+        logger.info("Upload complete: %s", handle)
+        return
+
+    if resp.error:
+        logger.error("Kaggle rejected the upload:")
+        logger.error("  error:        %s", resp.error)
+        logger.error("  status:       %s", resp.status or "(empty)")
+        if resp.invalid_tags:
+            logger.error("  invalid_tags: %s", resp.invalid_tags)
+        sys.exit(1)
+
+    logger.info("Kaggle: %s", resp.status or "(no status)")
+    logger.info("URL: %s/%s", KAGGLE_URL_BASE, handle)
+    logger.info("Upload complete: %s", handle)
+    logger.info(
+        "Poll for completion with:\n"
+        "  pixi run -e kaggle kaggle-sync --check-status --kaggle-slug %s --poll",
+        handle.split("/")[-1],
+    )
 
 
 def _archive_dataset(
@@ -453,6 +884,84 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Enable DEBUG-level logging.",
     )
+    parser.add_argument(
+        "--check-status",
+        action="store_true",
+        help=(
+            "Don't upload — just query Kaggle for the processing status of the "
+            "dataset identified by --kaggle-slug and exit. Combine with --poll "
+            "to loop. Exit codes: 0=READY, 1=FAILED, 2=still processing, 3=DELETED."
+        ),
+    )
+    parser.add_argument(
+        "--poll",
+        action="store_true",
+        help=(
+            "When used with --check-status, loop until the dataset reaches a "
+            "terminal state (READY / FAILED / DELETED) instead of exiting after "
+            "one check."
+        ),
+    )
+    parser.add_argument(
+        "--poll-interval",
+        type=int,
+        default=60,
+        help="Seconds between --poll iterations (default: 60).",
+    )
+    parser.add_argument(
+        "--pre-zip",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Pre-build a single archive.zip from the staged YOLO tree with "
+            "`zip -r -X` (strips macOS xattrs) and upload the payload root "
+            "(dataset.yaml + archive.zip), bypassing kagglehub's >50-files "
+            "auto-zip path. Default ON; use --no-pre-zip to disable."
+        ),
+    )
+    parser.add_argument(
+        "--upload-backend",
+        choices=["verbose", "kagglehub"],
+        default="verbose",
+        help=(
+            "How to call Kaggle: 'verbose' (default, surfaces "
+            "ApiCreateDatasetResponse.{status,error,invalid_tags}) or 'kagglehub' "
+            "(legacy kagglehub.dataset_upload, silently swallows errors)."
+        ),
+    )
+    parser.add_argument(
+        "--skip-pre-check",
+        action="store_true",
+        help=(
+            "Skip the pre-flight slug availability check (not recommended; "
+            "guards against burning slugs on zombie datasets)."
+        ),
+    )
+    parser.add_argument(
+        "--allow-existing",
+        action="store_true",
+        help=(
+            "Proceed even if the slug already exists with a current_version_number — "
+            "creates a new version of the existing dataset."
+        ),
+    )
+    parser.add_argument(
+        "--force-resume-zombie",
+        action="store_true",
+        help=(
+            "Proceed even if the pre-flight check detects a zombie dataset "
+            "(current_version_number=None, or HTTP 403). Likely to fail."
+        ),
+    )
+    parser.add_argument(
+        "--reuse-payload",
+        action="store_true",
+        help=(
+            "Skip staging, scrubbing, and the ZIP build entirely; reuse an "
+            "existing <staging-dir>/.kaggle-payload/ (dataset.yaml + archive.zip) "
+            "from a prior run. Fails if the payload is missing."
+        ),
+    )
 
     args = parser.parse_args()
     if args.dataset_subdir.is_absolute():
@@ -469,6 +978,19 @@ def main() -> int:
             "--skip-gcs is deprecated; GCS is skipped unless --archive-uri is set."
         )
 
+    # --check-status: pure diagnostic mode, no upload.
+    if args.check_status:
+        handle = _resolve_handle(
+            args.kaggle_slug,
+            args.kaggle_owner,
+            allow_placeholder=args.dry_run,
+        )
+        return _check_dataset_status(
+            handle,
+            poll=args.poll,
+            interval_s=args.poll_interval,
+        )
+
     if _check_prereqs(args) != 0:
         return 1
 
@@ -481,21 +1003,68 @@ def main() -> int:
             allow_placeholder=args.dry_run,
         )
     )
-    staging_dir, dataset_root = _prepare_staging(args)
+
+    if args.reuse_payload:
+        # Skip the expensive copy+scrub+zip pipeline; reuse the payload built by a
+        # prior run. staging_dir/dataset_root are still resolved for the archive
+        # path, but _prepare_staging is intentionally not called.
+        staging_dir = args.staging_dir.resolve()
+        dataset_root = staging_dir / args.dataset_subdir
+        payload_dir = staging_dir / PAYLOAD_DIR_NAME
+        if not (payload_dir / ARCHIVE_NAME).exists():
+            logger.error(
+                "--reuse-payload: no %s found at %s. Run once without "
+                "--reuse-payload to build it.",
+                ARCHIVE_NAME, payload_dir,
+            )
+            return 1
+        upload_dir = payload_dir
+    else:
+        staging_dir, dataset_root = _prepare_staging(args)
+        upload_dir = staging_dir
 
     if not args.skip_kaggle:
         assert handle is not None
-        _upload_to_kaggle(
-            staging_dir=staging_dir,
-            handle=handle,
-            version_notes=args.version_notes,
-            dry_run=args.dry_run,
-        )
+
+        if not args.skip_pre_check and not args.dry_run:
+            rc = _check_slug_availability(
+                handle,
+                allow_existing=args.allow_existing,
+                force_resume_zombie=args.force_resume_zombie,
+            )
+            if rc == 2:
+                return 2
+            if rc == 1 and not args.force_resume_zombie:
+                return 1
+
+        if not args.reuse_payload and args.pre_zip and not args.dry_run:
+            payload_dir = staging_dir / PAYLOAD_DIR_NAME
+            # staging-dir is reset each run, so payload_dir won't carry over; safe to wipe.
+            if payload_dir.exists():
+                shutil.rmtree(payload_dir)
+            upload_dir = _pre_zip_staging(
+                staging_dir, args.dataset_subdir, payload_dir, args.dry_run,
+            )
+
+        if args.upload_backend == "verbose":
+            _upload_to_kaggle_verbose(
+                upload_dir=upload_dir,
+                handle=handle,
+                version_notes=args.version_notes,
+                dry_run=args.dry_run,
+            )
+        else:
+            _upload_to_kaggle_legacy(
+                staging_dir=upload_dir,
+                handle=handle,
+                version_notes=args.version_notes,
+                dry_run=args.dry_run,
+            )
 
     for archive_uri in args.archive_uri:
         _archive_dataset(dataset_root, archive_uri, args.archive_mode, args.dry_run)
 
-    logger.info("Done. Kaggle dataset payload root: %s", staging_dir)
+    logger.info("Done. Kaggle dataset payload root: %s", upload_dir)
     return 0
 
 

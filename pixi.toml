@@ -21,6 +21,7 @@ omegaconf = ">=2.3.0,<3"
 sahi = ">=0.11.36,<0.13"
 requests = ">=2.34.2,<3"
 python-dotenv = ">=1.2.2,<2"
+kaggle = ">=2.2.3,<3"
 
 [pypi-dependencies]
 torchsummary = ">=1.5.1, <2"
@@ -48,7 +49,7 @@ torchvision = "==0.19.1"
 # Auth: set KAGGLE_API_TOKEN in .env or env var
 # ---------------------------------------------------------------------------
 [feature.kaggle.pypi-dependencies]
-kagglehub = ">=0.3,<1"
+kagglehub = ">=1.0.2,<2"
 
 [environments]
 # kaggle env stacks the default deps + the kaggle feature.  Used by the
@@ -72,6 +73,10 @@ unify-manga109  = "python scripts/unify/manga109.py"
 unify-coco-heads = "python scripts/unify/coco_heads.py --input-dir catnip-data/data/AnimeHeadsv3 --output-dir catnip-data/data/staging/ah_coco"
 unify-yolo-heads = "python scripts/unify/yolo_heads.py"
 unify-stage1    = "python scripts/unify/stage1.py --slice --slice-workers 4"
+
+# Rename YOLO dataset files to safe, deterministic names (Kaggle silently
+# rejects filenames with apostrophes/spaces/&/non-ASCII). Run before kaggle-sync.
+sanitize-names  = "python scripts/unify/sanitize_names.py"
 
 # Convenience: full data-prep pipeline (unify + slice).  No command of its
 # own — `depends-on` runs each task in order.
