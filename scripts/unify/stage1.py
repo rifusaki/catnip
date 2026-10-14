@@ -16,7 +16,7 @@ Usage::
     python scripts/unify/stage1.py --slice --slice-workers 4
 
 Paths are resolved from config/pipeline.yaml. Set CATNIP_DATA env var to
-relocate the entire catnip-data tree (e.g. to an external SSD or gcsfuse mount).
+relocate the entire catnip-data tree (e.g. to an external SSD).
 """
 
 from __future__ import annotations

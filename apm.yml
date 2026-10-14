@@ -7,13 +7,6 @@ targets:
   - codex
 dependencies:
   apm: []
-  mcp:
-  - name: eniayomi/gcp-mcp
-    registry: false
-    transport: stdio
-    command: npx
-    args:
-    - -y
-    - gcp-mcp
+  mcp: []
 includes: auto
 scripts: {}

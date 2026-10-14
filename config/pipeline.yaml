@@ -6,7 +6,7 @@ project:
 
 paths:
   # Root of the catnip-data tree. Override with the CATNIP_DATA env var
-  # to point at an external SSD, mounted drive, or gcsfuse mount.
+  # to point at an external SSD or another mounted copy.
   # See .env.example for per-environment recipes.
   data: ${oc.env:CATNIP_DATA,catnip-data}
 

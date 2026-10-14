@@ -30,7 +30,7 @@ Label Studio maintains 4 fine-grained labels for annotation fidelity:
 - **Purpose:** Find "where" bodies and faces are, regardless of *who* the character is.
 - **Model:** YOLO26n finetuned on 3 classes (`body`, `head`, `face`). YOLO26 is the official Ultralytics successor to YOLO11 (Jan 2026), offering NMS-free detection, MuSGD optimizer, and better accuracy-per-param.
 - **SAHI:** Slices full manga pages into overlapping 640×640 patches at inference. Catches both tiny faces in crowd scenes and massive full-page characters without panel extraction.
-- **Pre-sliced training (train/inference parity):** The training set is pre-sliced with the **same** SAHI parameters via `scripts/unify/stage1.py --slice` (slicer module: `src/training/slicing.py`). YOLO is trained at `imgsz=640` so each training sample is byte-identical to what the model sees during SAHI sliced prediction. See `docs/stage1-runbook.md` for the full pipeline and GCS layout.
+- **Pre-sliced training (train/inference parity):** The training set is pre-sliced with the **same** SAHI parameters via `scripts/unify/stage1.py --slice` (slicer module: `src/training/slicing.py`). YOLO is trained at `imgsz=640` so each training sample is byte-identical to what the model sees during SAHI sliced prediction. See `docs/stage1-runbook.md` for the full pipeline and R2 layout.
 - **Training:** Finetuned from `yolo26n.pt` at imgsz=640, patience=0 (per Fuyucch1's anime face findings), ~300 epochs on Colab T4.
 - **Target:** mAP50 ≥ 0.85 on body+face detection.
 - **Output:** Cropped bounding boxes of all faces/bodies + per-image JSON metadata.
@@ -63,11 +63,11 @@ Three-tier compute distribution reflecting professional ML engineering patterns:
 | Tier | Environment | Role |
 |------|------------|------|
 | **Dev & Prototyping** | M3 Mac Air (MPS) | Code development, pipeline testing, local sanity-check training |
-| **Heavy Training** | **Kaggle Notebook (T4×2 GPU, 30 h/week)** — primary; Google Colab (T4 GPU) — fallback | Stage 1 YOLO26 training (300 epochs in 12 h chunks), Stage 2 triplet loss training (100 epochs) |
+| **Heavy Training** | **Lightning AI Studio (T4/L4 GPU)** — primary; Kaggle Notebook (T4×2 GPU) — optional; Google Colab (T4 GPU) — last-resort fallback | Stage 1 YOLO26 training, Stage 2 triplet loss training (100 epochs) |
 | **Edge Serving** | Home Server (CPU, ONNX) | Production inference via Dockerized FastAPI with ONNX-exported models |
 
-- **Storage:** Google Cloud Storage bucket `catnip-data` is the *canonical archive*; Kaggle Datasets (`catnip-stage1-sliced`, `catnip-stage1-output`) are the *training cache*.  The pixi task `kaggle-sync` (run on the dev machine after `scripts/unify/stage1.py --slice`) keeps both in sync.  Cloudflare R2 migration deferred until home server API goes live (avoids egress costs for Label Studio + API traffic).
-- **Label Studio:** Self-hosted at `label.rifusaki.com` (project 2). Images imported from GCS URLs. Exports JSON with bounding box annotations.
+- **Storage:** Cloudflare R2 bucket `catnip-canonical` is the *canonical archive* (GCS decommissioned 2026-10-14 — migration verified 1:1, see `docs/r2-migration-plan.md`). HDD is the working origin; Lightning Studios pull from R2 (zero egress) via wrangler. Kaggle Datasets are an optional *training cache* via the `kaggle-sync` pixi task.
+- **Label Studio:** Self-hosted at `label.rifusaki.com` (project 2). Image URLs still point at GCS — re-point or mirror to R2 (`catnip-serve`) **before the GCS bucket is deleted** (migration plan §5.2). Exports JSON with bounding box annotations.
 - **Why Kaggle over Colab:** 30 h/week hard cap with a visible counter replaces Colab's arbitrary, unannounced throttling.  Sequential dataset versioning via kagglehub makes resumed training sessions simpler than the Colab tarball re-upload dance.  12 h session cap is the trade-off, handled by `scripts/train/stage1.py --resume` plus publishing the run to `catnip-stage1-output` at session end.
 
 ## 5. Codebase Status
@@ -87,7 +87,7 @@ Three-tier compute distribution reflecting professional ML engineering patterns:
 | `src/reid/matcher.py` | ❌ Empty | Port cosine similarity + FAISS logic (retrieve old `query.py` logic from git history) |
 | `src/api/` | ❌ Empty | FastAPI server (post-MVP, not in current plan) |
 | `notebooks/catnip.ipynb` | 📦 Archive | Obsolete once CLI exists; keep for reference |
-| `notebooks/catnipColab.ipynb` | 🔄 Evolve | Becomes the Colab training runbook |
+| `notebooks/catnipColab.ipynb` | 🔄 Evolve | Colab last-resort fallback; pulls from R2 via boto3 |
 | `notebooks/catnipLocal.ipynb` | 🗑️ Deleted | Already removed from disk; content merged into catnip.ipynb |
 
 ### Deleted / No Longer Exist
@@ -102,8 +102,10 @@ Three-tier compute distribution reflecting professional ML engineering patterns:
 - `src/output/output.py:7` — broken import from deleted module
 - `src/training/preparation.py:36-60` — commented-out `prepare_data()` cruft
 
-### GCS Bucket Legacy
-See `docs/implementation-plan.md` Phase 1, task 1.6. The bucket `catnip-data` contains stale training runs (`runs/izutsumi*`, `runs/0.11.*`), old results (`results/`), and orphaned annotation versions (`data/annotations/v01-v12`). Phase 1 includes reorganization.
+### GCS Bucket Legacy (resolved)
+GCS-era cleanup done (stale runs, old results, orphaned annotation versions —
+archived under `archive/`). The whole tree now lives in R2; `gs://catnip-data`
+is decommissioned (see `docs/r2-migration-plan.md` Phase 5).
 
 ## 6. Phased Implementation Plan
 
@@ -130,5 +132,5 @@ After the core pipeline is working:
 1. **ONNX Export:** Convert both YOLO26 and ResNet18 models to ONNX for CPU-efficient inference on the home server.
 2. **FastAPI Backend:** Implement `src/api/` with `/api/v1/match` endpoint.
 3. **Dockerize:** Multi-stage Dockerfile → deployed on home server.
-4. **Cloudflare R2 Migration:** Move storage from GCS to R2 when home server egress becomes the dominant cost.
+4. **Cloudflare R2 Migration:** ✅ Done (2026-10-14) — R2 is the canonical archive; GCS decommissioned.
 5. **CI/CD:** GitHub Actions for linting + tests on PR.

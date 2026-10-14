@@ -92,10 +92,7 @@ data-prep = { depends-on = [
 train-stage1 = "python scripts/train/stage1.py"
 train-stage2 = "python scripts/train/stage2.py"
 
-# --- GCS bucket hygiene ---
-reorganize-gcs = "python scripts/reorganize_gcs.py"
-
-# --- Kaggle sync (local/GCS/R2 → Kaggle dataset version) ---
+# --- Kaggle sync (local → Kaggle dataset version) ---
 # Requires the kaggle env + KAGGLE_API_TOKEN:  pixi run -e kaggle kaggle-sync
 kaggle-sync = "python scripts/kaggle_sync.py"
 

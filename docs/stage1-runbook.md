@@ -6,28 +6,24 @@ top-to-bottom once, then use the **TL;DR** section as the quick reference.
 ## TL;DR
 
 ```bash
-# 1. Clean + restructure GCS bucket
-python scripts/reorganize_gcs.py                # archive (default) or --delete
-gsutil -m cp catnip-data/data/ls-exports/*.json gs://catnip-data/data/annotations/latest_export.json
-
-# 2. Convert each raw dataset → staging (4 staging dirs)
+# 1. Convert each raw dataset → staging (4 staging dirs)
 python scripts/unify/izutsumi.py
 python scripts/unify/manga109.py
 python scripts/unify/coco_heads.py --input-dir catnip-data/data/AnimeHeadsv3 --output-dir catnip-data/data/staging/ah_coco
 python scripts/unify/yolo_heads.py              # ah_yolo (v1+v2+ani_face_detection)
 
-# 3. Merge staging → unified + pre-slice for SAHI parity
+# 2. Merge staging → unified + pre-slice for SAHI parity
 python scripts/unify/stage1.py --slice --slice-workers 4
 
-# 4. Train (imgsz=640 matches the slice size)
+# 3. Train (imgsz=640 matches the slice size)
 python scripts/train/stage1.py
 
-# 5. Inference (SAHI uses the SAME slice params from config)
+# 4. Inference (SAHI uses the SAME slice params from config)
 python -m catnip extract --input-dir data/manga --output-dir data/crops
 ```
 
 Estimated end-to-end runtime on M3 Air: ~25 min of CPU work
-(unify + slice) + Colab T4 training time (~1 h).
+(unify + slice) + GPU training time (Lightning Studio).
 
 ---
 
@@ -61,7 +57,7 @@ distribution of object scales and contexts.
 
 ---
 
-## GCS bucket layout (`gs://catnip-data`)
+## Storage layout (Cloudflare R2, `s3://catnip-canonical`)
 
 ### Current → target
 
@@ -75,8 +71,8 @@ distribution of object scales and contexts.
 | `data/anime_head_detection/`        | ✅ **KEEP**        | deepghs datasets (v1, v2, ani_face_detection). |
 | `data/AnimeHeadsv3/`                | ✅ **KEEP**        | COCO-format dataset. |
 | `data/staging/`                     | ⚠️ **REGENERATE**  | Output of `scripts/unify/*.py` convertors. Safe to delete after training. |
-| `data/annotations/v01-v12/`         | 🗑 **ARCHIVE**     | Orphaned annotation versions. `scripts/reorganize_gcs.py` handles this. |
-| `data/annotations/latest_export.json` | 🆕 **CREATE**    | Canonical "latest" copy, refreshed by `reorganize_gcs.py`. |
+| `data/annotations/v01-v12/`         | 🗑 **ARCHIVE**     | Orphaned annotation versions. Archived during the GCS-era cleanup. |
+| `data/annotations/latest_export.json` | 🆕 **CREATE**    | Canonical "latest" copy, refreshed on every Label Studio export. |
 | `data/stage1/`                      | 🗑 **DELETE/ARCHIVE** | Legacy `setup_stage1_data` symlink-based output. Superseded by `training/stage1/`. |
 | `training/stage1/`                  | 🆕 **CREATE**     | Unified YOLO dataset from `scripts/unify/stage1.py`. ~80k images, ~14 GB. |
 | `training/stage1/dataset.yaml`      | 🆕 **CREATE**     | YOLO dataset manifest. |
@@ -88,48 +84,35 @@ distribution of object scales and contexts.
 | `models/yolo26_stage1_body_head_face.pt` | 🆕 **CREATE** | **Trained Stage 1 model** (the deliverable). ~20 MB. |
 | `models/best.pt`                    | 🗑 **DELETE**     | Renamed/copied to `yolo26_stage1_body_head_face.pt` after training. |
 | `runs/detect/stage1/`               | ⚠️ **KEEP LAST**   | Ultralytics training output (plots, results.csv, weights/). Keep the most recent run only. |
-| `runs/izutsumi*`                    | 🗑 **ARCHIVE**     | Old training runs. Handled by `scripts/reorganize_gcs.py`. |
-| `runs/0.11.*`                       | 🗑 **ARCHIVE**     | Old run names. Handled by `scripts/reorganize_gcs.py`. |
-| `results/`                          | 🗑 **ARCHIVE**     | Old inference results. Handled by `scripts/reorganize_gcs.py`. |
-| `archive/`                          | 🆕 **CREATE**     | Destination for `scripts/reorganize_gcs.py` archive operations. |
+| `runs/izutsumi*`                    | 🗑 **ARCHIVE**     | Old training runs. Archived during the GCS-era cleanup. |
+| `runs/0.11.*`                       | 🗑 **ARCHIVE**     | Old run names. Archived during the GCS-era cleanup. |
+| `results/`                          | 🗑 **ARCHIVE**     | Old inference results. Archived during the GCS-era cleanup. |
+| `archive/`                          | ✅ **KEEP**        | GCS-era archive of stale runs/results. |
 
-### Cleanup script
+### Cleanup
 
-`scripts/reorganize_gcs.py` is the single source of truth for bucket
-cleanup. It:
+The GCS-era cleanup (stale runs, orphaned annotation versions, `.DS_Store`
+droppings) is done — `scripts/reorganize_gcs.py` was removed after it
+served its purpose. R2 object CRUD uses `wrangler` (single objects) or
+`s5cmd` against the S3 API (bulk). Credentials recipe: `.env.example`.
 
-1. Archives (or `--delete`) the four stale path globs:
-   `runs/izutsumi*`, `runs/0.11.*`, `runs/detect/`, `results/`.
-2. Creates the `data/stage1/{images,labels}/` directory prefixes (no
-   longer needed for the new pipeline, but kept for backward compat).
-3. Copies the newest Label Studio export to
-   `data/annotations/latest_export.json`.
-
-```bash
-python scripts/reorganize_gcs.py --dry-run     # preview
-python scripts/reorganize_gcs.py --force       # archive (default, mv to archive/)
-python scripts/reorganize_gcs.py --delete --force   # permanent delete
-```
-
-The script refuses to touch the protected prefixes `data/manga/` and
-`data/annotations/` (no overlap with the stale globs by design).
-
-### What to upload / sync to GCS
+### What to upload / sync to R2
 
 | Local path                         | Sync to GCS                            | When |
 |------------------------------------|----------------------------------------|------|
-| `catnip-data/data/ls-exports/`     | `gs://catnip-data/data/ls-exports/`    | After every Label Studio export. |
-| `catnip-data/data/izutsumi/annotations/` | `gs://catnip-data/data/izutsumi/annotations/` | After every Label Studio export. |
-| `catnip-data/training/stage1_sliced/` | `gs://catnip-data/training/stage1_sliced/` | After `scripts/unify/stage1.py --slice`. **Required** — Colab reads from here. |
-| `catnip-data/models/yolo26_stage1_body_head_face.pt` | `gs://catnip-data/models/` | After `scripts/train/stage1.py` completes. **Required**. |
-| `catnip-data/runs/detect/stage1/` | `gs://catnip-data/runs/detect/stage1/` | Optional but useful (training curves, results.csv). |
+| `catnip-data/data/ls-exports/`     | `s3://catnip-canonical/data/ls-exports/`    | After every Label Studio export. |
+| `catnip-data/data/izutsumi/annotations/` | `s3://catnip-canonical/data/izutsumi/annotations/` | After every Label Studio export. |
+| `catnip-data/training/stage1_sliced/` | `s3://catnip-canonical/training/stage1_sliced/` | After `scripts/unify/stage1.py --slice`. |
+| `catnip-data/models/yolo26_stage1_body_head_face.pt` | `s3://catnip-canonical/models/` | After `scripts/train/stage1.py` completes. **Required**. |
+| `catnip-data/runs/detect/stage1/` | `s3://catnip-canonical/runs/detect/stage1/` | Optional but useful (training curves, results.csv). |
 
-Sync commands:
+Sync commands (R2 S3 API; map `R2_*` creds to `AWS_*` env, `AWS_REGION=auto`):
 
 ```bash
-gsutil -m rsync -r catnip-data/data/ls-exports/    gs://catnip-data/data/ls-exports/
-gsutil -m rsync -r catnip-data/training/stage1_sliced/ gs://catnip-data/training/stage1_sliced/
-gsutil -m cp catnip-data/models/yolo26_stage1_body_head_face.pt gs://catnip-data/models/
+s5cmd --endpoint-url $R2_ENDPOINT sync catnip-data/data/ls-exports/ s3://catnip-canonical/data/ls-exports/
+s5cmd --endpoint-url $R2_ENDPOINT sync catnip-data/training/stage1_sliced/ s3://catnip-canonical/training/stage1_sliced/
+npx wrangler r2 object put catnip-canonical/models/yolo26_stage1_body_head_face.pt \
+    --file catnip-data/models/yolo26_stage1_body_head_face.pt --remote
 ```
 
 ### What can be safely deleted locally
@@ -154,28 +137,43 @@ All commands assume CWD = repo root and pixi env active (`pixi shell`).
 ### A. On the dev machine (M3 Mac Air)
 
 ```bash
-# 1. Reorganize the bucket (once)
-python scripts/reorganize_gcs.py --force
-
-# 2. Generate staging directories (pixi tasks wrap the same scripts)
+# 1. Generate staging directories (pixi tasks wrap the same scripts)
 pixi run unify-izutsumi
 pixi run unify-manga109
 pixi run unify-coco-heads
 pixi run unify-yolo-heads
 
-# 3. Merge + slice for SAHI parity
+# 2. Merge + slice for SAHI parity
 pixi run unify-stage1              # = python scripts/unify/stage1.py --slice --slice-workers 4
 
-# 4. Sync sliced dataset to Kaggle (creates a new version of the private
-#    Kaggle dataset `catnip-stage1-sliced`; GCS sync is separate below).
+# 3. (Optional) Sync sliced dataset to Kaggle (creates a new version of the
+#    private Kaggle dataset `catnip-stage1-sliced`).
 #    Requires KAGGLE_API_TOKEN in .env (from kaggle.com/settings/api).
 pixi run -e kaggle kaggle-sync
-
-# 5. Sync the pretrained YOLO26n to GCS (one-time, if not already there)
-gsutil cp catnip-data/models/yolo26n.pt gs://catnip-data/models/yolo26n.pt
 ```
 
-### B. On Kaggle (T4×2 GPU) — primary training path
+### B. On Lightning AI Studio (T4/L4 GPU) — primary training path
+
+R2 is the data source (zero egress). Full ingest + env + train +
+checkpoint procedure: `docs/r2-migration-plan.md` Phase 4. Short version:
+
+```bash
+curl -fsSL https://pixi.sh/install.sh | sh   # pixi is not preinstalled
+mkdir -p ~/catnip-data
+npx wrangler r2 object get catnip-canonical/compressed/stage1_sliced.tar \
+    --file ~/catnip-data/stage1_sliced.tar --remote
+tar -xf ~/catnip-data/stage1_sliced.tar -C ~/catnip-data && rm ~/catnip-data/stage1_sliced.tar
+export CATNIP_DATA=$HOME/catnip-data
+pixi install && pixi run train-stage1
+```
+
+Push the model + run back to R2 after each chunk (see the migration plan
+Phase 4 step 7 — `wrangler r2 object put ... --remote`).
+
+Free-plan budget: ~15 credits/month ≈ 22 T4-hr; 4 h restart cycle
+(`--resume` + R2 checkpoint tarballs mitigate).
+
+### B2. On Kaggle (T4×2 GPU) — fallback
 
 Once-per-account setup:
 
@@ -220,30 +218,24 @@ Quotas to budget around:
 
 ### C. On Colab (T4 GPU) — fallback only
 
-Use this only if Kaggle quota is exhausted mid-Phase-B.  Colab has no
-predictable quota; sessions can be terminated without notice.
+Last-resort fallback. Colab has no predictable quota; sessions can be
+terminated without notice.
 
 ```python
 # 1. Open notebooks/catnipColab.ipynb
-# 2. Set BRANCH in cell 1 (currently refactor/reID)
-# 3. Run all cells — gcsfuse mount, tarball download, train, upload back
+# 2. Add R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY as Colab secrets
+# 3. Set BRANCH in the setup cell (currently refactor/reID)
+# 4. Run all cells — R2 tarball download (boto3), train, upload back
 ```
 
 ### D. Back on the dev machine
 
 ```bash
-# 6. Pull the trained model from the Kaggle output dataset
-python -c "
-import kagglehub
-path = kagglehub.dataset_download('rifusaki/catnip-stage1-output')
-print(path)
-"
-# Then copy the model from the downloaded path to local/GCS
-cp <downloaded-path>/models/yolo26_stage1_body_head_face.pt catnip-data/models/
-gsutil cp catnip-data/models/yolo26_stage1_body_head_face.pt \
-    gs://catnip-data/models/
+# 4. Pull the trained model from R2
+npx wrangler r2 object get catnip-canonical/models/yolo26_stage1_body_head_face.pt \
+    --file catnip-data/models/yolo26_stage1_body_head_face.pt --remote
 
-# 7. (Optional) Run inference on a held-out page to sanity-check
+# 5. (Optional) Run inference on a held-out page to sanity-check
 python -m catnip extract \
     --input-dir catnip-data/data/manga/v09 \
     --output-dir /tmp/crops
@@ -284,7 +276,7 @@ with tempfile.TemporaryDirectory() as d:
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
-| `gsutil` not found | Google Cloud SDK not installed | Install from cloud.google.com/sdk. |
+| `s5cmd`/`wrangler` not found | R2 tooling missing | `brew install s5cmd`; `npx wrangler`. Map `R2_*` creds to `AWS_*` env vars. |
 | Slicer hangs on first run | Cold PIL/SAHI import | Normal — first call is slow. |
 | `AttributeError: 'Paths' object has no attribute 'stage1_sliced_dir'` | Old `Settings` pydantic model in checkpoint | `rm -rf .pixi/envs/default/lib/python3.11/site-packages/catnip*` (after `pixi install`). |
 | `RuntimeError: invalid image size` | Empty/corrupt source image | Inspect the file; rerun skip the bad file. |

@@ -2,8 +2,9 @@
 """
 kaggle_sync.py - Publish the Stage 1 sliced training dataset to Kaggle.
 
-Kaggle is the primary training-data location for Stage 1.  The notebook
-expects the attached dataset to contain this layout:
+Kaggle is an optional training-data location for Stage 1 (Lightning AI is the
+primary training host).  The notebook expects the attached dataset to contain
+this layout:
 
     training/stage1_sliced/dataset.yaml
     training/stage1_sliced/images/{train,val,test}/...
@@ -16,24 +17,11 @@ Kaggle (created once via the web UI).
 Auth uses the modern KAGGLE_API_TOKEN env var (or ~/.kaggle/access_token).
 Get the token from https://www.kaggle.com/settings/api → "Generate New Token".
 
-First-time import from the current GCS copy::
-
-    python scripts/kaggle_sync.py \\
-        --source-uri gs://catnip-data/training/stage1_sliced \\
-        --staging-dir /Volumes/rifuSSD/catnip-kaggle-stage1-sliced \\
-        --version-notes "initial import from GCS"
-
 Normal update from a freshly regenerated local dataset::
 
     python scripts/kaggle_sync.py \\
         --source catnip-data/training/stage1_sliced \\
         --version-notes "post-slicing refresh"
-
-Optional archive mirror::
-
-    python scripts/kaggle_sync.py \\
-        --source catnip-data/training/stage1_sliced \\
-        --archive-uri r2:catnip-canonical/training/stage1_sliced
 
 Check the server-side processing status of an uploaded dataset (exits 0 when
 READY, 1 when FAILED, 2 when still processing, 3 when DELETED)::
@@ -86,7 +74,6 @@ def _catnip_data_root() -> Path:
     return PROJECT_ROOT / "catnip-data"
 
 DEFAULT_LOCAL_SOURCE = _catnip_data_root() / "training" / "stage1_sliced"
-DEFAULT_REMOTE_SOURCE = "gs://catnip-data/training/stage1_sliced"
 DEFAULT_DATASET_SUBDIR = Path("training") / "stage1_sliced"
 DEFAULT_STAGING_DIR = Path(tempfile.gettempdir()) / "catnip-kaggle-stage1-sliced"
 DEFAULT_KAGGLE_SLUG = "catnip-stage1-sliced"
@@ -131,32 +118,6 @@ def _run(cmd: list[str], dry_run: bool) -> int:
     return subprocess.call(cmd)
 
 
-def _is_gs_uri(uri: str) -> bool:
-    return uri.startswith("gs://")
-
-
-def _uses_rclone(uri: str) -> bool:
-    return not _is_gs_uri(uri) and ":" in uri
-
-
-def _tool_for_uri(uri: str) -> str:
-    if _is_gs_uri(uri):
-        return "gcloud"
-    if _uses_rclone(uri):
-        return "rclone"
-    raise ValueError(
-        f"Unsupported URI '{uri}'. Use gs://... or an rclone remote like "
-        "r2:bucket/path."
-    )
-
-
-def _check_tool(tool: str) -> int:
-    if shutil.which(tool) is None:
-        logger.error("%s not found on $PATH.", tool)
-        return 1
-    return 0
-
-
 def _resolve_handle(
     kaggle_slug: str,
     owner: str | None,
@@ -198,12 +159,6 @@ def _check_prereqs(args: argparse.Namespace) -> int:
         return 0
 
     failed = 0
-
-    if args.source_uri:
-        failed += _check_tool(_tool_for_uri(args.source_uri))
-
-    for archive_uri in args.archive_uri:
-        failed += _check_tool(_tool_for_uri(archive_uri))
 
     if not args.skip_kaggle and not _has_api_token():
         logger.error(
@@ -303,33 +258,6 @@ def _reset_staging_dir(staging_dir: Path, dry_run: bool) -> None:
 
     staging_dir.mkdir(parents=True)
     marker.write_text("catnip kaggle staging directory\n")
-
-
-def _transfer_cmd(source: str, destination: str, mode: str) -> list[str]:
-    """Build a remote transfer command for gcloud storage or rclone."""
-    remote_side = (
-        source if (_is_gs_uri(source) or _uses_rclone(source)) else destination
-    )
-    tool = _tool_for_uri(remote_side)
-
-    if tool == "gcloud":
-        cmd = ["gcloud", "storage", "rsync", "--recursive", source, destination]
-        if mode == "sync":
-            cmd.insert(3, "--delete-unmatched-destination-objects")
-        return cmd
-
-    rclone_action = "sync" if mode == "sync" else "copy"
-    return [
-        "rclone",
-        rclone_action,
-        source,
-        destination,
-        "--progress",
-        "--transfers",
-        "16",
-        "--checkers",
-        "32",
-    ]
 
 
 def _copy_local_source(source: Path, dataset_root: Path, dry_run: bool) -> None:
@@ -638,27 +566,10 @@ def _prepare_staging(
 
     _reset_staging_dir(staging_dir, args.dry_run)
 
-    if args.source_uri:
-        logger.info(
-            "Materializing remote source %s -> %s",
-            args.source_uri,
-            dataset_root,
-        )
-        if not args.dry_run:
-            dataset_root.parent.mkdir(parents=True, exist_ok=True)
-        rc = _run(
-            _transfer_cmd(args.source_uri, str(dataset_root), "copy"),
-            args.dry_run,
-        )
-        if rc != 0:
-            logger.error("Remote source materialization failed (exit %d).", rc)
-            sys.exit(rc)
-    else:
-        source = args.source or DEFAULT_LOCAL_SOURCE
-        source = source.resolve()
-        logger.info("Staging local source %s -> %s", source, dataset_root)
-        _validate_dataset_root(source)
-        _copy_local_source(source, dataset_root, args.dry_run)
+    source = (args.source or DEFAULT_LOCAL_SOURCE).resolve()
+    logger.info("Staging local source %s -> %s", source, dataset_root)
+    _validate_dataset_root(source)
+    _copy_local_source(source, dataset_root, args.dry_run)
 
     if not args.dry_run:
         removed = _scrub_staging(dataset_root, args.dry_run)
@@ -762,22 +673,6 @@ def _upload_to_kaggle_verbose(
     )
 
 
-def _archive_dataset(
-    dataset_root: Path,
-    archive_uri: str,
-    archive_mode: str,
-    dry_run: bool,
-) -> None:
-    logger.info("Archiving %s -> %s [%s]", dataset_root, archive_uri, archive_mode)
-    rc = _run(
-        _transfer_cmd(str(dataset_root), archive_uri, archive_mode),
-        dry_run=dry_run,
-    )
-    if rc != 0:
-        logger.error("Archive transfer failed for %s (exit %d).", archive_uri, rc)
-        sys.exit(rc)
-
-
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -787,23 +682,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Publish the Stage 1 sliced dataset to Kaggle.",
     )
-    source_group = parser.add_mutually_exclusive_group()
-    source_group.add_argument(
+    parser.add_argument(
         "--source",
         type=Path,
         default=None,
-        help=(
-            "Local YOLO dataset root to publish. Defaults to "
-            f"{DEFAULT_LOCAL_SOURCE} when --source-uri is omitted."
-        ),
-    )
-    source_group.add_argument(
-        "--source-uri",
-        default=None,
-        help=(
-            "Remote YOLO dataset root to materialize before upload, e.g. "
-            f"{DEFAULT_REMOTE_SOURCE} or gcs:catnip-data/training/stage1_sliced."
-        ),
+        help=f"Local YOLO dataset root to publish (default: {DEFAULT_LOCAL_SOURCE}).",
     )
     parser.add_argument(
         "--staging-dir",
@@ -842,30 +725,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--skip-kaggle",
         action="store_true",
-        help="Stage and optionally archive the dataset, but do not upload to Kaggle.",
-    )
-    parser.add_argument(
-        "--archive-uri",
-        action="append",
-        default=[],
-        help=(
-            "Optional archive mirror destination. May be repeated. Supports "
-            "gs://... and rclone remotes such as r2:bucket/path."
-        ),
-    )
-    parser.add_argument(
-        "--archive-mode",
-        choices=["copy", "sync"],
-        default="copy",
-        help=(
-            "Archive transfer mode. copy is non-destructive; sync deletes "
-            "destination extras (default: copy)."
-        ),
-    )
-    parser.add_argument(
-        "--skip-gcs",
-        action="store_true",
-        help="Deprecated no-op. GCS archive writes are skipped unless --archive-uri is set.",
+        help="Stage the dataset, but do not upload to Kaggle.",
     )
     parser.add_argument(
         "--version-notes",
@@ -973,11 +833,6 @@ def main() -> int:
     args = parse_args()
     _setup_logging(args.verbose)
 
-    if args.skip_gcs:
-        logger.warning(
-            "--skip-gcs is deprecated; GCS is skipped unless --archive-uri is set."
-        )
-
     # --check-status: pure diagnostic mode, no upload.
     if args.check_status:
         handle = _resolve_handle(
@@ -1060,9 +915,6 @@ def main() -> int:
                 version_notes=args.version_notes,
                 dry_run=args.dry_run,
             )
-
-    for archive_uri in args.archive_uri:
-        _archive_dataset(dataset_root, archive_uri, args.archive_mode, args.dry_run)
 
     logger.info("Done. Kaggle dataset payload root: %s", upload_dir)
     return 0
