@@ -40,8 +40,8 @@ cuda = "12.6"
 
 [feature.cuda.target.linux-64.dependencies]
 opencv = ">=4.10,<5"
-pytorch = { version = "2.6.0", build = "*cuda*" }
-torchvision = { version = "0.21.0", build = "*cuda*" }
+pytorch = { version = "2.6.0.*", build = "*cuda*" }
+torchvision = { version = "0.21.0.*", build = "*cuda*" }
 
 # dev machine
 [target.osx-arm64.dependencies]
