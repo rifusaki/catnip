@@ -28,13 +28,20 @@ torchsummary = ">=1.5.1, <2"
 opencv-python = ">=4.10.0,<5"
 manga109api = ">=0.3.1, <0.4"
 
-# home server running on WSL
-[target.linux-64.pypi-dependencies]
-# Install PyTorch with XPU support - IPEX is no longer needed for PyTorch 2.6+
-# as Intel XPU support is now integrated into PyTorch itself
-torch = "==2.6.0+xpu"
-torchvision = "==0.21.0+xpu"
-torchaudio = "==2.6.0+xpu"
+# Home server (WSL) - Intel XPU: re-add a feature with
+#   [feature.xpu.target.linux-64.pypi-dependencies] torch = "==2.6.0+xpu" ...
+# when the server goes live. Dropped 2026-10-14: conda->pypi pins from fresh
+# solves conflict with the +xpu local version label, and no XPU host runs yet.
+
+# CUDA hosts (Lightning Studio T4, Colab). `pixi run -e cuda ...`
+# Build-string pin selects the conda-forge CUDA variant (default is cpu_mkl).
+[feature.cuda.system-requirements]
+cuda = "12.6"
+
+[feature.cuda.target.linux-64.dependencies]
+opencv = ">=4.10,<5"
+pytorch = { version = "2.6.0", build = "*cuda*" }
+torchvision = { version = "0.21.0", build = "*cuda*" }
 
 # dev machine
 [target.osx-arm64.dependencies]
@@ -53,9 +60,10 @@ kagglehub = ">=1.0.2,<2"
 
 [environments]
 # kaggle env stacks the default deps + the kaggle feature.  Used by the
-# kaggle-sync / kaggle-publish tasks.  Training and inference stay in
-# the default env.
+# kaggle-sync / kaggle-publish tasks.  Training/inference: default env on
+# mac, `-e xpu` on the home server (Intel), `-e cuda` on Lightning/Colab.
 kaggle = ["kaggle"]
+cuda = ["cuda"]
 
 # ---------------------------------------------------------------------------
 # Tasks

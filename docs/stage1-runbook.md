@@ -164,8 +164,11 @@ npx wrangler r2 object get catnip-canonical/compressed/stage1_sliced.tar \
     --file ~/catnip-data/stage1_sliced.tar --remote
 tar -xf ~/catnip-data/stage1_sliced.tar -C ~/catnip-data && rm ~/catnip-data/stage1_sliced.tar
 export CATNIP_DATA=$HOME/catnip-data
-pixi install && pixi run train-stage1
+pixi install -e cuda    # cuda env = conda pytorch 2.6.0 (CUDA 12.6) build
+pixi run -e cuda python -c "import torch; print(torch.cuda.is_available())"   # True
 ```
+
+Train (free-plan T4): `pixi run -e cuda train-stage1 --override training.stage1.device=cuda`
 
 Push the model + run back to R2 after each chunk (see the migration plan
 Phase 4 step 7 — `wrangler r2 object put ... --remote`).
