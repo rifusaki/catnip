@@ -221,11 +221,11 @@ Quotas to budget around:
 
 ### B3. On a spot GPU VM (Vast.ai / RunPod) — recommended while Lightning is down
 
-4090-class spot instances run the full 300-epoch stage1 in ~13–18 h at
-~$0.20–0.45/h (≈ $3–10 total). Egress from R2 is free, so the 14 GB ingest
-costs nothing on any host. Interruption-safe: checkpoints push back to R2
-every `CKPT_INTERVAL_MIN` and a re-run resumes from
-`s3://catnip-canonical/runs/stage1-last.pt`.
+4090-class spot instances run the 150-epoch stage1 (halved from 300,
+patience=15) in ~15–20 h at ~$0.20–0.45/h (≈ $3–9 total). Egress from R2
+is free, so the 14 GB ingest costs nothing on any host. Interruption-safe:
+checkpoints push back to R2 every `CKPT_INTERVAL_MIN` and a re-run
+resumes from `s3://catnip-canonical/runs/stage1-last.pt`.
 
 Pick any CUDA 12.x PyTorch image (Vast.ai: "PyTorch" templates; RunPod:
 `runpod/pytorch:2.x-cuda12.x`). Then:

@@ -85,8 +85,10 @@ training:
     # because the training data is pre-sliced at those dimensions
     # (scripts/unify/stage1.py --slice). Do not change one without the other.
     imgsz: 640
-    epochs: 300
-    patience: 0
+    # 150 epochs (halved 2026-10-30 from 300; runbook overfit note) with
+    # early stopping patience=15.
+    epochs: 150
+    patience: 15
     batch: 8
     workers: 4  # dataloader workers (T4: 2-4, M3: 4, A100: 8-16)
     device: mps
