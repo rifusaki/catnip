@@ -240,6 +240,7 @@ bash scripts/train/spot_bootstrap.sh
 # Tunables (env):
 #   SPOT_BATCH=32 SPOT_WORKERS=8 CKPT_INTERVAL_MIN=10
 #   CATNIP_REPO=~/catnip CATNIP_DATA=~/catnip-data
+#   CATNIP_BRANCH=refactor/reID   (switch to main once merged)
 ```
 
 What the script does (and assumes):
@@ -247,8 +248,10 @@ What the script does (and assumes):
 - Preflight: GPU visible (`nvidia-smi`), ≥40 GB free disk, R2 creds.
 - Installs pixi + the `cuda` env (conda pytorch, CUDA 12.6) if missing.
 - Pulls `compressed/stage1_sliced.tar` from R2 (s5cmd if installed,
-  else boto3 multipart), extracts, **repoints `dataset.yaml` `path:` to the
-  local root** (the tarball ships with the generating host's absolute path).
+  else boto3 multipart — a `~/.catnip-r2-venv` is built automatically when
+  system python lacks boto3 or pip is PEP 668-restricted), extracts,
+  **repoints `dataset.yaml` `path:` to the local root** (the tarball ships
+  with the generating host's absolute path).
 - Hydrates `runs/detect/stage1/weights/last.pt` from R2 if present, then
   `train-stage1 --resume` (ultralytics restores epoch/optimizer state).
   NOTE: ultralytics resume restores saved args from the checkpoint; the

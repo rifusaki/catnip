@@ -13,6 +13,8 @@
 # Optional overrides:
 #   CATNIP_REPO     repo checkout        (default ~/catnip; cloned if missing)
 #   CATNIP_DATA     data root           (default ~/catnip-data)
+#   CATNIP_BRANCH   repo branch         (default refactor/reID; switch to
+#                                        main once the branch merges)
 #   R2_ENDPOINT     S3 endpoint          (default catnip-canonical account)
 #   SPOT_BATCH      train batch         (default 32)
 #   SPOT_WORKERS    dataloader workers  (default 8)
@@ -21,6 +23,7 @@ set -euo pipefail
 
 CATNIP_REPO="${CATNIP_REPO:-$HOME/catnip}"
 CATNIP_DATA="${CATNIP_DATA:-$HOME/catnip-data}"
+CATNIP_BRANCH="${CATNIP_BRANCH:-refactor/reID}"
 R2_ENDPOINT="${R2_ENDPOINT:-https://eccb0b608bd926e793224944aba32cf4.r2.cloudflarestorage.com}"
 R2_BUCKET="${R2_BUCKET:-catnip-canonical}"
 SPOT_BATCH="${SPOT_BATCH:-32}"
@@ -45,16 +48,27 @@ export AWS_REGION="${AWS_REGION:-auto}"
 [[ -n "${AWS_REGION}" ]] || export AWS_REGION=auto
 
 # --- R2 transfer helper: s5cmd if available, else boto3 ----------------------
+# boto3 may be missing (and PEP 668 may block system pip) — build a small
+# dedicated venv for transfers in that case.
+BOTO3_PY=python3
+if ! command -v s5cmd >/dev/null 2>&1 && ! python3 -c "import boto3" 2>/dev/null; then
+  if [[ ! -x "$HOME/.catnip-r2-venv/bin/python" ]]; then
+    python3 -m venv "$HOME/.catnip-r2-venv" || die "cannot create venv for boto3"
+    "$HOME/.catnip-r2-venv/bin/pip" install --quiet boto3
+  fi
+  BOTO3_PY="$HOME/.catnip-r2-venv/bin/python"
+fi
 r2_get() {  # r2_get <s3-url> <local-path>
   if command -v s5cmd >/dev/null 2>&1; then
     s5cmd --endpoint-url "$R2_ENDPOINT" cp "$1" "$2"
   else
-    python3 - "$1" "$2" <<'PY'
+    "$BOTO3_PY" - "$1" "$2" <<'PY'
+import os
 import sys
 import boto3
 src, dst = sys.argv[1], sys.argv[2]
 bucket, key = src.removeprefix("s3://").split("/", 1)
-boto3.client("s3").download_file(bucket, key, dst)
+boto3.client("s3", endpoint_url=os.environ["R2_ENDPOINT"]).download_file(bucket, key, dst)
 PY
   fi
 }
@@ -62,12 +76,13 @@ r2_put() {  # r2_put <local-path> <s3-url>
   if command -v s5cmd >/dev/null 2>&1; then
     s5cmd --endpoint-url "$R2_ENDPOINT" cp "$1" "$2"
   else
-    python3 - "$1" "$2" <<'PY'
+    "$BOTO3_PY" - "$1" "$2" <<'PY'
+import os
 import sys
 import boto3
 src, dst = sys.argv[1], sys.argv[2]
 bucket, key = dst.removeprefix("s3://").split("/", 1)
-boto3.client("s3").upload_file(src, bucket, key)
+boto3.client("s3", endpoint_url=os.environ["R2_ENDPOINT"]).upload_file(src, bucket, key)
 PY
   fi
 }
@@ -81,15 +96,18 @@ free_disk=$(df -Pk "$CATNIP_DATA" 2>/dev/null | awk 'NR==2 {print $4}')
 (( free_disk >= 40 * 1024 * 1024 )) \
   || die "Less than 40 GB free under $CATNIP_DATA (need ~14 GB tarball + ~14 GB extracted + cache)."
 
-if ! command -v s5cmd >/dev/null 2>&1; then
-  python3 -c "import boto3" 2>/dev/null || pip install --quiet boto3 \
-    || die "Need s5cmd or python3+boto3 for R2 transfers."
-fi
+command -v s5cmd >/dev/null 2>&1 \
+  || "$BOTO3_PY" -c "import boto3" 2>/dev/null \
+  || die "Need s5cmd or python3+boto3 for R2 transfers (venv creation failed)."
 
 # --- Repo + env --------------------------------------------------------------
 if [[ ! -d "$CATNIP_REPO/.git" ]]; then
-  log "Cloning catnip into $CATNIP_REPO"
-  git clone https://github.com/rifusaki/catnip.git "$CATNIP_REPO"
+  log "Cloning catnip ($CATNIP_BRANCH) into $CATNIP_REPO"
+  git clone --branch "$CATNIP_BRANCH" https://github.com/rifusaki/catnip.git "$CATNIP_REPO"
+else
+  git -C "$CATNIP_REPO" fetch origin "$CATNIP_BRANCH"
+  git -C "$CATNIP_REPO" checkout "$CATNIP_BRANCH"
+  git -C "$CATNIP_REPO" reset --hard "origin/$CATNIP_BRANCH"
 fi
 cd "$CATNIP_REPO"
 
