@@ -282,6 +282,10 @@ terminated without notice.
 
 ### D. Back on the dev machine
 
+The full local flow (HDD/R2 data source, MPS training, results push to R2)
+is notebook-driven: `notebooks/catnipLocal.ipynb`. Not the production path —
+MPS is ~3-5x slower than a T4; use for smoke tests and debug runs.
+
 ```bash
 # 4. Pull the trained model from R2
 npx wrangler r2 object get catnip-canonical/models/yolo26_stage1_body_head_face.pt \
