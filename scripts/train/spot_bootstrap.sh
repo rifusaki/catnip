@@ -16,8 +16,8 @@
 #   CATNIP_BRANCH   repo branch         (default refactor/reID; switch to
 #                                        main once the branch merges)
 #   R2_ENDPOINT     S3 endpoint          (default catnip-canonical account)
-#   SPOT_BATCH      train batch         (default 32)
-#   SPOT_WORKERS    dataloader workers  (default 8)
+#   SPOT_BATCH      train batch         (default 48)
+#   SPOT_WORKERS    dataloader workers  (default min(16, cores))
 #   CKPT_INTERVAL_MIN  checkpoint push cadence (default 10)
 set -euo pipefail
 
@@ -26,8 +26,12 @@ CATNIP_DATA="${CATNIP_DATA:-$HOME/catnip-data}"
 CATNIP_BRANCH="${CATNIP_BRANCH:-refactor/reID}"
 R2_ENDPOINT="${R2_ENDPOINT:-https://eccb0b608bd926e793224944aba32cf4.r2.cloudflarestorage.com}"
 R2_BUCKET="${R2_BUCKET:-catnip-canonical}"
-SPOT_BATCH="${SPOT_BATCH:-32}"
-SPOT_WORKERS="${SPOT_WORKERS:-8}"
+SPOT_BATCH="${SPOT_BATCH:-48}"
+# yolo26n @640 on ~132k slices is dataloader-bound, not compute-bound:
+# default workers = min(16, cores). SPOT_WORKERS env wins.
+default_workers=$(nproc)
+if (( default_workers > 16 )); then default_workers=16; fi
+SPOT_WORKERS="${SPOT_WORKERS:-$default_workers}"
 CKPT_INTERVAL_MIN="${CKPT_INTERVAL_MIN:-10}"
 
 log() { printf '[spot] %s\n' "$*"; }

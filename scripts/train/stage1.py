@@ -134,6 +134,9 @@ def main() -> None:
                 "project": str(settings.paths.runs_dir / "detect"),
                 "name": "stage1",
                 "amp": False if str(stage1.device).lower() == "mps" else True,
+                # Explicit optimizer: `auto` ignores manual lr0 (config sets
+                # MuSGD for CUDA paths; MPS override below re-forces AdamW).
+                "optimizer": stage1.optimizer,
             }
             
             # Force AdamW on MPS to avoid MuSGD bf16 type casting issues

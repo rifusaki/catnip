@@ -101,6 +101,7 @@ class Stage1TrainingParams(BaseModel):
     mosaic: float
     lr0: float
     cos_lr: bool
+    optimizer: str
 
 
 class Stage2TrainingParams(BaseModel):

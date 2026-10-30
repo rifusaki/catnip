@@ -238,7 +238,7 @@ Pick any CUDA 12.x PyTorch image (Vast.ai: "PyTorch" templates; RunPod:
 bash scripts/train/spot_bootstrap.sh
 
 # Tunables (env):
-#   SPOT_BATCH=32 SPOT_WORKERS=8 CKPT_INTERVAL_MIN=10
+#   SPOT_BATCH=48 SPOT_WORKERS=16 CKPT_INTERVAL_MIN=10
 #   CATNIP_REPO=~/catnip CATNIP_DATA=~/catnip-data
 #   CATNIP_BRANCH=refactor/reID   (switch to main once merged)
 ```

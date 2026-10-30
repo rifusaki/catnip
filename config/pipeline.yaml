@@ -96,6 +96,10 @@ training:
     mosaic: 0.5
     lr0: 0.001
     cos_lr: true
+    # Explicit optimizer for CUDA paths (Colab/Lightning/Vast/RunPod).
+    # `auto` ignores manual lr0; explicit MuSGD makes lr0 effective.
+    # stage1.py forces AdamW on MPS (MuSGD bf16 type-cast issues).
+    optimizer: MuSGD
   stage2:
     model: reid_resnet18.pth
     batch_size: 32
