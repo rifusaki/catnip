@@ -219,6 +219,52 @@ Quotas to budget around:
 | Per-dataset storage          | 200 GB         | Sequential versions of `catnip-stage1-sliced` are fine |
 | Private-datasets total       | 200 GB         | Two datasets × sequential versions is fine |
 
+### B3. On a spot GPU VM (Vast.ai / RunPod) — recommended while Lightning is down
+
+4090-class spot instances run the full 300-epoch stage1 in ~13–18 h at
+~$0.20–0.45/h (≈ $3–10 total). Egress from R2 is free, so the 14 GB ingest
+costs nothing on any host. Interruption-safe: checkpoints push back to R2
+every `CKPT_INTERVAL_MIN` and a re-run resumes from
+`s3://catnip-canonical/runs/stage1-last.pt`.
+
+Pick any CUDA 12.x PyTorch image (Vast.ai: "PyTorch" templates; RunPod:
+`runpod/pytorch:2.x-cuda12.x`). Then:
+
+```bash
+# 1. Provide the R2 token (R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY from
+#    ~/secrets/r2-sippy.conf on the dev machine — export or write to a file
+#    and pass R2_CREDS=<file>).
+# 2. One command — clone, ingest from R2, train, publish back to R2:
+bash scripts/train/spot_bootstrap.sh
+
+# Tunables (env):
+#   SPOT_BATCH=32 SPOT_WORKERS=8 CKPT_INTERVAL_MIN=10
+#   CATNIP_REPO=~/catnip CATNIP_DATA=~/catnip-data
+```
+
+What the script does (and assumes):
+
+- Preflight: GPU visible (`nvidia-smi`), ≥40 GB free disk, R2 creds.
+- Installs pixi + the `cuda` env (conda pytorch, CUDA 12.6) if missing.
+- Pulls `compressed/stage1_sliced.tar` from R2 (s5cmd if installed,
+  else boto3 multipart), extracts, **repoints `dataset.yaml` `path:` to the
+  local root** (the tarball ships with the generating host's absolute path).
+- Hydrates `runs/detect/stage1/weights/last.pt` from R2 if present, then
+  `train-stage1 --resume` (ultralytics restores epoch/optimizer state).
+  NOTE: ultralytics resume restores saved args from the checkpoint; the
+  explicit `data=`/`batch` overrides win, but if a resume run complains about
+  the old `/content/...` path, delete the stale `args.yaml` beside the
+  checkpoint and start fresh.
+- Watcher pushes `last.pt` to `runs/stage1-last.pt` every 10 min (a
+  partially-written `last.pt` can occasionally make a push corrupt — harmless,
+  the next push overwrites it; verify sizes if resuming from a suspect push).
+- On completion: publishes `models/yolo26_stage1_body_head_face.pt` and a
+  `runs/stage1-run.tar` to R2.
+
+Budget guidance: a Vast.ai 4090 (~$0.20–0.30/h) is cheapest but hosts are
+flakier — fine given the resume loop. RunPod community 4090 (~$0.34/h) is
+steadier. Both fit well under a $25 cap.
+
 ### C. On Colab (T4 GPU) — fallback only
 
 Last-resort fallback. Colab has no predictable quota; sessions can be
