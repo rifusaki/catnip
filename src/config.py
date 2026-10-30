@@ -42,6 +42,7 @@ class Paths(BaseModel):
 
     # Pre-sliced (SAHI-parity) Training
     stage1_sliced_dir: Path
+    stage1_sliced_subset_dir: Path
 
     # Models & Outputs
     model_dir: Path
@@ -89,6 +90,18 @@ class Params(BaseModel):
     metric_learning: MetricLearningParams
 
 
+class SubsetSourceParams(BaseModel):
+    """Per-source sampling knobs for the stratified stage1 subset."""
+    fraction: float
+    max_per_image: int  # 0 = unlimited
+
+
+class Stage1SubsetParams(BaseModel):
+    seed: int
+    train: dict[str, SubsetSourceParams]
+    val: dict[str, SubsetSourceParams]
+
+
 class Stage1TrainingParams(BaseModel):
     model: str
     imgsz: int
@@ -102,6 +115,8 @@ class Stage1TrainingParams(BaseModel):
     lr0: float
     cos_lr: bool
     optimizer: str
+    use_subset: bool
+    subset: Stage1SubsetParams
 
 
 class Stage2TrainingParams(BaseModel):

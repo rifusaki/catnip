@@ -284,7 +284,8 @@ terminated without notice.
 
 The full local flow (HDD/R2 data source, MPS training, results push to R2)
 is notebook-driven: `notebooks/catnipLocal.ipynb`. Not the production path —
-MPS is ~3-5x slower than a T4; use for smoke tests and debug runs.
+MPS is ~3-5x slower than a T4; use for smoke tests and debug runs. For real
+(stratified-subset) local training, see section E below.
 
 ```bash
 # 4. Pull the trained model from R2
@@ -296,6 +297,61 @@ python -m catnip extract \
     --input-dir catnip-data/data/manga/v09 \
     --output-dir /tmp/crops
 ls /tmp/crops
+```
+
+---
+
+### E. On the M3 Air itself — subset training (`exp/m3-local-stage1`, experimental)
+
+The full ~165k-slice dataset at 150 epochs is ~80 MPS-days — but most of it
+is redundancy: overlapping page slices (manga109 alone expanded 7.3x under
+slicing) and near-duplicate single-object head crops. The experimental branch
+trains on a stratified ~10% subset at the full 640px — SAHI parity intact,
+imgsz untouched:
+
+```bash
+pixi run subset-stage1     # build training/stage1_sliced_subset (symlinks, ~1 min)
+pixi run train-stage1-m3   # 40 epochs, batch 16, patience 12 → ~12 h overnight
+```
+
+Measured on the M3 Air (16 GB, torch 2.4.1, ultralytics 8.4.193):
+
+| Config                          | Speed            | GPU mem |
+|---------------------------------|------------------|---------|
+| batch 8, workers 0 (old clamp)  | 0.35 s/img       | 5.4 GB  |
+| batch 16, workers 4              | **0.075 s/img**  | 4.3 GB  |
+| batch 32, workers 4              | 0.106 s/img      | 8.2 GB  |
+| batch 16, workers 8              | 0.10 s/img       | 4.7 GB  |
+
+The old 2.8 s/it baseline was NOT GPU compute — ultralytics clamps
+`workers=0` on MPS (`BaseTrainer.__init__`), so CPU-side augmentation ran
+single-threaded and dominated. `scripts/train/stage1.py` now restores the
+configured workers on MPS (`_patch_mps_workers`); verify the log says
+"Using 4 dataloader workers".
+
+Subset design (knobs in `training.stage1.subset`, rebuild after changing):
+
+- 13,539 train / 1,521 val slices; class ratios within a few % of full.
+- izutsumi 100%, manga109 capped at 1 slice per page (every page kept),
+  ah_yolo 8%, ah_coco 10% — head(1) exists only in ah_*, so no source hits 0.
+- Artifacts stay separate: `runs/detect/stage1_m3*`, best model saved as
+  `models/yolo26_stage1_body_head_face_m3.pt` — canonical names untouched.
+
+Caveats:
+
+- No fan: sustained load may throttle past the first hour; keep it plugged
+  in with airflow. Expect the 12 h estimate to stretch, not shrink.
+- 1.5k-image val → ~±1% mAP noise on early-stop and best-epoch selection.
+- The honest final number comes from the full (never subset) test split:
+
+```bash
+pixi run python -c "
+from ultralytics import YOLO
+from src.config import settings
+YOLO(str(settings.paths.model_dir / 'yolo26_stage1_body_head_face_m3.pt')).val(
+    data=str(settings.paths.stage1_sliced_dir / 'dataset.yaml'),
+    split='test', imgsz=640, device='mps',
+)"
 ```
 
 ---
@@ -332,6 +388,7 @@ with tempfile.TemporaryDirectory() as d:
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
+| MPS run crawls (~2.8 s/it @ batch 8) | ultralytics clamps `workers=0` on MPS; CPU aug dominates | Fixed by `_patch_mps_workers` in `scripts/train/stage1.py`; log must say "Using 4 dataloader workers" |
 | `s5cmd`/`wrangler` not found | R2 tooling missing | `brew install s5cmd`; `npx wrangler`. Map `R2_*` creds to `AWS_*` env vars. |
 | Slicer hangs on first run | Cold PIL/SAHI import | Normal — first call is slow. |
 | `AttributeError: 'Paths' object has no attribute 'stage1_sliced_dir'` | Old `Settings` pydantic model in checkpoint | `rm -rf .pixi/envs/default/lib/python3.11/site-packages/catnip*` (after `pixi install`). |
