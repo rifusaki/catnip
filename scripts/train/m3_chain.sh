@@ -12,6 +12,10 @@
 #
 # The loop is checkpoint-driven: it reads the epoch stored in last.pt (0
 # when absent), so it works from scratch AND resumes an interrupted chain.
+# NOTE: ultralytics check_resume restores ALL args from the checkpoint —
+# epochs cannot be overridden on resume — so the first cycle must be
+# launched with the intended EPOCHS, and the chain refuses to continue a
+# checkpoint saved with different epochs.
 #
 # Usage:
 #   pixi run train-stage1-m3-chain            # EPOCHS=40 default
@@ -31,15 +35,19 @@ LAST_PT="$RUN_DIR/weights/last.pt"
 
 log() { printf '[chain %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 
-checkpoint_epoch() {
-  # 0 when no checkpoint exists; else the epoch saved inside last.pt.
+checkpoint_state() {
+  # "<epoch> <saved_epochs_arg>" — epoch -1 is ultralytics' completed
+  # sentinel; the saved epochs arg must match EPOCHS or resume would
+  # train the wrong schedule (check_resume restores args from the
+  # checkpoint and does NOT allow overriding epochs).
   if [ ! -f "$LAST_PT" ]; then
-    echo 0
+    echo "0 none"
     return
   fi
   pixi run python -c "
 import torch
-print(torch.load('$LAST_PT', map_location='cpu', weights_only=False).get('epoch', 0))
+ck = torch.load('$LAST_PT', map_location='cpu', weights_only=False)
+print(ck.get('epoch', 0), ck.get('train_args', {}).get('epochs'))
 " 2>/dev/null | tail -1
 }
 
@@ -55,10 +63,23 @@ kill_cycle() {
 }
 
 while :; do
-  DONE_EPOCH=$(checkpoint_epoch)
+  read -r DONE_EPOCH SAVED_EPOCHS <<< "$(checkpoint_state)"
   case "$DONE_EPOCH" in
-    ''|*[!0-9]*) DONE_EPOCH=0 ;;
+    -1)
+      log "checkpoint marks training complete (epoch -1) — chain done"
+      break
+      ;;
+    ''|*[!0-9]*)
+      DONE_EPOCH=0
+      ;;
   esac
+
+  if [ "$SAVED_EPOCHS" != "none" ] && [ "$SAVED_EPOCHS" != "$EPOCHS" ]; then
+    log "checkpoint's saved epochs=$SAVED_EPOCHS != EPOCHS=$EPOCHS —"
+    log "ultralytics resume restores args from the checkpoint and ignores"
+    log "an epochs override; delete $RUN_DIR and start the chain fresh."
+    exit 1
+  fi
 
   if [ "$DONE_EPOCH" -ge "$EPOCHS" ]; then
     log "checkpoint at epoch $DONE_EPOCH >= EPOCHS=$EPOCHS — chain complete"
