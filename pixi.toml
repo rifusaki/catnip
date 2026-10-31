@@ -45,9 +45,12 @@ torchvision = { version = "0.21.0.*", build = "*cuda*" }
 
 # dev machine
 [target.osx-arm64.dependencies]
-# macOS uses conda PyTorch (no Intel XPU)
-pytorch = "==2.4.1"
-torchvision = "==0.19.1"
+# macOS uses conda PyTorch (no Intel XPU).
+# 2.4.1 had a per-iteration MPS allocation leak (YOLO train grew ~9 MB/iter,
+# empty_cache could not reclaim; two jetsam kills on the 16 GB Air). 2.6.0
+# is the same pairing the cuda feature uses on linux.
+pytorch = "==2.6.0"
+torchvision = "==0.21.0"
 
 # ---------------------------------------------------------------------------
 # Optional feature: kagglehub for sync/publish scripts.

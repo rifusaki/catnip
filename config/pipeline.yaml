@@ -107,6 +107,11 @@ training:
     # (scripts/train/subset_stage1.py) instead of the full sliced dataset.
     # M3-local experiment profile; production (CUDA/Kaggle) keeps false.
     use_subset: false
+    # Deterministic mode routes torch through use_deterministic_algorithms.
+    # Plumbed for experiments: deterministic=True/False were both leak-tested
+    # on MPS (not the leak cause); left false as deterministic kernels are
+    # the slower path. Seed stays fixed either way.
+    deterministic: false
     # Stratified subset knobs (per source, per split). Sources must cover
     # every staging dir name; unmapped sources fail loudly.
     #   fraction:      keep-probability applied to each slice

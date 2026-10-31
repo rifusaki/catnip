@@ -7,10 +7,16 @@ Handles OOM errors with automatic batch-size reduction.
 """
 
 import argparse
+import gc
 import logging
 import os
 import sys
 from pathlib import Path
+
+# torchvision::nms has no MPS implementation; without this every
+# epoch-end validation dies with NotImplementedError. Set before torch
+# import so op dispatch sees it. Harmless on cuda/cpu (MPS-only behavior).
+os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
 import torch
 from ultralytics import YOLO
@@ -46,12 +52,22 @@ def _install_mps_cache_guard(model: YOLO, device: str) -> None:
         return
 
     batches_since_clear = 0
+    total_batches = 0
 
     def clear_mps_cache(trainer) -> None:
-        nonlocal batches_since_clear
+        nonlocal batches_since_clear, total_batches
         batches_since_clear += 1
+        total_batches += 1
         if batches_since_clear >= MPS_CACHE_CLEAR_INTERVAL:
+            gc.collect()
+            before = torch.mps.driver_allocated_memory() / 1e9
             torch.mps.empty_cache()
+            after = torch.mps.driver_allocated_memory() / 1e9
+            logger.info(
+                "mps guard @batch %d: gc+empty_cache %.2fG -> %.2fG, torch-allocated %.2fG",
+                total_batches, before, after,
+                torch.mps.current_allocated_memory() / 1e9,
+            )
             batches_since_clear = 0
 
     model.add_callback("on_train_batch_end", clear_mps_cache)
@@ -223,6 +239,7 @@ def main() -> None:
                 # Explicit optimizer: `auto` ignores manual lr0 (config sets
                 # MuSGD for CUDA paths; MPS override below re-forces AdamW).
                 "optimizer": stage1.optimizer,
+                "deterministic": stage1.deterministic,
             }
             
             # Force AdamW on MPS to avoid MuSGD bf16 type casting issues

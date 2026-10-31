@@ -116,6 +116,7 @@ class Stage1TrainingParams(BaseModel):
     cos_lr: bool
     optimizer: str
     use_subset: bool
+    deterministic: bool
     subset: Stage1SubsetParams
 
 
