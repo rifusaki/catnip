@@ -24,7 +24,37 @@ from src.training.preparation import save_best_model
 
 logger = logging.getLogger(__name__)
 
+# Batches between mid-epoch torch.mps.empty_cache() calls (see
+# _install_mps_cache_guard). 50 ≈ once every ~6 min on the M3 subset run.
+MPS_CACHE_CLEAR_INTERVAL = 50
+
 _mps_workers_patched = False
+
+
+def _install_mps_cache_guard(model: YOLO, device: str) -> None:
+    """Bound MPS allocator growth mid-epoch (macOS jetsam protection).
+
+    ultralytics clears the MPS cache between epochs only. On unified-memory
+    Macs with foreground apps resident, allocator pool growth within a
+    single epoch is fatal: observed 4.3G -> 8.2G driver-allocated over ~650
+    iters (batch 16), at which point macOS jetsam killed the process
+    ("low-swap", exit 137) on a 16 GB machine (ultralytics#22621 pattern).
+    Emptying the cache every N batches keeps growth bounded; the brief
+    allocator hitch is amortized over the epoch.
+    """
+    if str(device).lower() != "mps":
+        return
+
+    batches_since_clear = 0
+
+    def clear_mps_cache(trainer) -> None:
+        nonlocal batches_since_clear
+        batches_since_clear += 1
+        if batches_since_clear >= MPS_CACHE_CLEAR_INTERVAL:
+            torch.mps.empty_cache()
+            batches_since_clear = 0
+
+    model.add_callback("on_train_batch_end", clear_mps_cache)
 
 
 def _patch_mps_workers(workers: int) -> None:
@@ -173,6 +203,7 @@ def main() -> None:
 
         try:
             model = YOLO(model_path)
+            _install_mps_cache_guard(model, stage1.device)
 
             train_kwargs: dict = {
                 "data": str(dataset_yaml),

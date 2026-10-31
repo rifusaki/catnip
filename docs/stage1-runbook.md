@@ -329,6 +329,17 @@ single-threaded and dominated. `scripts/train/stage1.py` now restores the
 configured workers on MPS (`_patch_mps_workers`); verify the log says
 "Using 4 dataloader workers".
 
+**Memory caveat (16 GB machines)**: MPS driver-allocated memory grew
+4.3 → 8.2 GB within one epoch at batch 16 (ultralytics only clears the
+MPS cache between epochs), and macOS jetsam killed the run mid-epoch
+("low-swap", exit 137) while normal foreground apps were open.
+`_install_mps_cache_guard` in stage1.py now runs `torch.mps.empty_cache()`
+every 50 batches mid-epoch, and the task defaults to batch 8 (throughput
+is augmentation-bound, so batch 8 costs no wall-clock). If a run still
+dies with 137, free RAM (close Chrome et al.) and re-run — ultralytics
+resumes cleanly from `runs/detect/stage1_m3*/weights/last.pt` only at
+epoch boundaries, so a mid-epoch kill restarts the epoch.
+
 Subset design (knobs in `training.stage1.subset`, rebuild after changing):
 
 - 13,539 train / 1,521 val slices; class ratios within a few % of full.
