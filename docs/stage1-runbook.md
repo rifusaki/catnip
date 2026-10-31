@@ -356,6 +356,13 @@ Consequences for the M3 run:
 - batch 8 is the default: throughput is augmentation-bound, so the
   smaller footprint is free.
 
+First full run (2026-10-31, exp/m3-local-stage1): 40-epoch chain early-
+stopped at epoch 24 (best epoch 12, patience 12). Full-test-split val of
+`yolo26_stage1_body_head_face_m3.pt` (15,993 imgs / 87,544 boxes):
+**mAP50 0.696, mAP50-95 0.374** (body 0.729/0.435, head 0.638/0.349,
+face 0.719/0.340) — ~10.5h wall-clock on the M3 Air, zero jetsam events
+after the chain was in place.
+
 Subset design (knobs in `training.stage1.subset`, rebuild after changing):
 
 - 13,539 train / 1,521 val slices; class ratios within a few % of full.
@@ -372,7 +379,7 @@ Caveats:
 - The honest final number comes from the full (never subset) test split:
 
 ```bash
-pixi run python -c "
+PYTORCH_ENABLE_MPS_FALLBACK=1 pixi run python -c "
 from ultralytics import YOLO
 from src.config import settings
 YOLO(str(settings.paths.model_dir / 'yolo26_stage1_body_head_face_m3.pt')).val(
