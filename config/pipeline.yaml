@@ -120,16 +120,20 @@ training:
     # manga109+izutsumi — keep all four sources non-zero or a class starves.
     subset:
       seed: 42
+      # Sized for the 16 GB M3 Air: ultralytics-on-MPS retains ~0.3-0.7 MB of
+      # driver memory per unique image seen (saturates after one full pass —
+      # see docs/stage1-runbook.md section E). Budget: floor ~2G + retention
+      # (train+val uniques) + ~1.2G reclaimable peak < ~8G.
       train:
         izutsumi: {fraction: 1.0, max_per_image: 0}
-        manga109: {fraction: 1.0, max_per_image: 1}
-        ah_yolo: {fraction: 0.08, max_per_image: 2}
-        ah_coco: {fraction: 0.10, max_per_image: 2}
+        manga109: {fraction: 0.32, max_per_image: 1}
+        ah_yolo: {fraction: 0.035, max_per_image: 2}
+        ah_coco: {fraction: 0.04, max_per_image: 2}
       val:
         izutsumi: {fraction: 1.0, max_per_image: 0}
-        manga109: {fraction: 0.30, max_per_image: 2}
-        ah_yolo: {fraction: 0.10, max_per_image: 1}
-        ah_coco: {fraction: 0.20, max_per_image: 1}
+        manga109: {fraction: 0.15, max_per_image: 1}
+        ah_yolo: {fraction: 0.05, max_per_image: 1}
+        ah_coco: {fraction: 0.08, max_per_image: 1}
   stage2:
     model: reid_resnet18.pth
     batch_size: 32

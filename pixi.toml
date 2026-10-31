@@ -109,6 +109,8 @@ train-stage2 = "python scripts/train/stage2.py"
 #    `pixi run train-stage1-m3 -- --override key=value`
 subset-stage1 = "python scripts/train/subset_stage1.py"
 train-stage1-m3 = "python scripts/train/stage1.py --override training.stage1.device=mps --override training.stage1.use_subset=true --override training.stage1.batch=8 --override training.stage1.epochs=40 --override training.stage1.patience=12"
+# Leak-safe chained run: one epoch per process via resume (see m3_chain.sh).
+train-stage1-m3-chain = "bash scripts/train/m3_chain.sh"
 
 # --- Kaggle sync (local → Kaggle dataset version) ---
 # Requires the kaggle env + KAGGLE_API_TOKEN:  pixi run -e kaggle kaggle-sync

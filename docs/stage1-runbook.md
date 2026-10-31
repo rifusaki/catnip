@@ -311,7 +311,7 @@ imgsz untouched:
 
 ```bash
 pixi run subset-stage1     # build training/stage1_sliced_subset (symlinks, ~1 min)
-pixi run train-stage1-m3   # 40 epochs, batch 16, patience 12 → ~12 h overnight
+pixi run train-stage1-m3-chain   # 40 epochs, one epoch per process (~10-12 h overnight)
 ```
 
 Measured on the M3 Air (16 GB, torch 2.4.1, ultralytics 8.4.193):
@@ -329,16 +329,32 @@ single-threaded and dominated. `scripts/train/stage1.py` now restores the
 configured workers on MPS (`_patch_mps_workers`); verify the log says
 "Using 4 dataloader workers".
 
-**Memory caveat (16 GB machines)**: MPS driver-allocated memory grew
-4.3 → 8.2 GB within one epoch at batch 16 (ultralytics only clears the
-MPS cache between epochs), and macOS jetsam killed the run mid-epoch
-("low-swap", exit 137) while normal foreground apps were open.
-`_install_mps_cache_guard` in stage1.py now runs `torch.mps.empty_cache()`
-every 50 batches mid-epoch, and the task defaults to batch 8 (throughput
-is augmentation-bound, so batch 8 costs no wall-clock). If a run still
-dies with 137, free RAM (close Chrome et al.) and re-run — ultralytics
-resumes cleanly from `runs/detect/stage1_m3*/weights/last.pt` only at
-epoch boundaries, so a mid-epoch kill restarts the epoch.
+**Memory caveat (16 GB machines) — the MPS driver-memory leak**:
+ultralytics-on-MPS retains Metal driver memory ~3-5 MB per training
+iteration (rate scales with dataset size; does NOT saturate, survives
+`gc.collect()` + `torch.mps.empty_cache()`, invisible to the torch
+allocator). Isolated to the ultralytics training loop: bare conv/BN/
+upsample/H2D/AdamW loops on the same torch 2.6 + macOS 27 are flat, and
+small-fraction ultralytics runs (<=1.4k images) barely show it — a full
+subset epoch (~5.2k images, 652 iters) climbs ~2G/epoch and kills the
+process by epoch 2-3 (jetsam "low-swap", exit 137). Also: torch 2.4.1
+leaked the same, deterministic-mode and dataloader workers are
+exonerated, and torchvision NMS needs `PYTORCH_ENABLE_MPS_FALLBACK=1`
+(stage1.py sets it).
+
+Consequences for the M3 run:
+- the subset knobs are sized so ONE epoch fits: floor ~2G + ~3.5G
+  retention + ~1.2G reclaimable peak ≈ 7G, below the practical ~8-9G
+  jetsam line with normal apps open;
+- multi-epoch single processes are impossible → `pixi run
+  train-stage1-m3-chain` runs one epoch per process and resumes
+  (`scripts/train/m3_chain.sh`), which restores epoch/optimizer/EMA and
+  keeps the cos_lr schedule and early stopping exactly as one
+  continuous 40-epoch run;
+- `_install_mps_cache_guard` bounds the reclaimable peak mid-epoch and
+  logs driver-vs-allocated memory every 50 batches;
+- batch 8 is the default: throughput is augmentation-bound, so the
+  smaller footprint is free.
 
 Subset design (knobs in `training.stage1.subset`, rebuild after changing):
 
