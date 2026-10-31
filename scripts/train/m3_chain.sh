@@ -106,6 +106,19 @@ while :; do
       NOW_MT=$(stat -f %m "$LAST_PT" 2>/dev/null || echo 0)
       if [ "$NOW_MT" -gt "$BEFORE_MT" ]; then
         SAVED=1
+        # The completed sentinel (-1) means the process is exiting on its
+        # own (early stop or final epoch): let it finish the post-save tail
+        # (plots, best-model copy) instead of killing it mid-way.
+        DONE_MARKER=$(pixi run python -c "
+import torch
+print(torch.load('$LAST_PT', map_location='cpu', weights_only=False).get('epoch'))
+" 2>/dev/null | tail -1)
+        if [ "$DONE_MARKER" = "-1" ]; then
+          log "checkpoint marks training complete — waiting for natural exit"
+          wait "$WRAPPER"
+          log "process exited on its own (rc=$?)"
+          break
+        fi
         sleep 10  # let the checkpoint write fully flush
         break
       fi
