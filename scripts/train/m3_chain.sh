@@ -18,20 +18,23 @@
 # checkpoint saved with different epochs.
 #
 # Usage:
-#   pixi run train-stage1-m3-chain            # EPOCHS=40 default
+#   pixi run train-stage1-m3-chain            # EPOCHS=26 default (fits 12h)
 #   EPOCHS=12 bash scripts/train/m3_chain.sh  # shorter run
 #
-# Tunables (env): EPOCHS (default 40), CYCLE_TIMEOUT_MIN (default 90).
-# Each cycle: ~13 min train + ~2-3 min val/resume overhead on the M3 Air.
+# Tunables (env): EPOCHS (default 26), CYCLE_TIMEOUT_MIN (default 90),
+# MAX_WALL_CLOCK_HOURS (default 12).
+# Sustained cycle on fanless M3 Air: ~26 min (train + val + thermal throttle + flush).
 set -uo pipefail
 
 REPO_ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$REPO_ROOT"
 
-EPOCHS="${EPOCHS:-40}"
+EPOCHS="${EPOCHS:-26}"
 CYCLE_TIMEOUT_MIN="${CYCLE_TIMEOUT_MIN:-90}"
+MAX_WALL_CLOCK_HOURS="${MAX_WALL_CLOCK_HOURS:-12}"
 RUN_DIR="${CATNIP_DATA:-/Volumes/rifuSSD/catnip-data}/runs/detect/stage1_m3"
 LAST_PT="$RUN_DIR/weights/last.pt"
+CHAIN_START_TIME=$SECONDS
 
 log() { printf '[chain %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 
@@ -86,10 +89,19 @@ while :; do
     break
   fi
 
+  # Wall-clock guard: ensure >=30 min remains before launching another cycle
+  ELAPSED=$((SECONDS - CHAIN_START_TIME))
+  MAX_SECONDS=$((MAX_WALL_CLOCK_HOURS * 3600))
+  if [ "$DONE_EPOCH" -gt 0 ] && [ $((MAX_SECONDS - ELAPSED)) -lt 1800 ]; then
+    log "wall-clock limit approaching ($((ELAPSED / 3600))h elapsed of ${MAX_WALL_CLOCK_HOURS}h) — stopping chain cleanly at epoch $DONE_EPOCH"
+    break
+  fi
+
   RESUME_ARGS=()
   [ -f "$LAST_PT" ] && RESUME_ARGS=(--resume "$LAST_PT")
   NEXT_EPOCH=$((DONE_EPOCH + 1))
-  log "training epoch $NEXT_EPOCH/$EPOCHS (checkpoint: $DONE_EPOCH)"
+  CYCLE_START=$SECONDS
+  log "training epoch $NEXT_EPOCH/$EPOCHS (checkpoint: $DONE_EPOCH, elapsed: $((ELAPSED / 60))m)"
 
   BEFORE_MT=$(stat -f %m "$LAST_PT" 2>/dev/null || echo 0)
   pixi run train-stage1-m3 -- "${RESUME_ARGS[@]}" &
@@ -134,7 +146,8 @@ print(torch.load('$LAST_PT', map_location='cpu', weights_only=False).get('epoch'
       log "inspect $RUN_DIR/results.csv; retry with: pixi run train-stage1-m3-chain"
       exit 1
     fi
-    log "epoch $NEXT_EPOCH saved; memory released by process exit"
+    CYCLE_SEC=$((SECONDS - CYCLE_START))
+    log "epoch $NEXT_EPOCH saved in ${CYCLE_SEC}s (~$((CYCLE_SEC / 60))m); memory released by process exit"
     sleep 15  # let macOS reclaim wired memory before the next cycle
   else
     wait "$WRAPPER"

@@ -88,17 +88,27 @@ training:
     # because the training data is pre-sliced at those dimensions
     # (scripts/unify/stage1.py --slice). Do not change one without the other.
     imgsz: 640
-    # 150 epochs (halved 2026-10-30 from 300; runbook overfit note) with
-    # early stopping patience=15.
-    epochs: 150
-    patience: 15
+    # 26 epochs (calibrated for ~12h run at 26.25 min/cycle sustained on M3 Air)
+    epochs: 26
+    patience: 12
     batch: 8
     workers: 4  # dataloader workers (T4: 2-4, M3: 4, A100: 8-16)
     device: mps
-    freeze: 10
+    freeze: 0   # unfreeze backbone for manga line-art domain adaptation
     mosaic: 0.5
+    close_mosaic: 6  # disable mosaic for final 6 epochs to refine box regression
     lr0: 0.001
     cos_lr: true
+    weight_decay: 0.002  # regularize unfreezing on 5.2k slices
+    cls_pw: 0.6          # BCE loss weighting to lift minority head recall
+    box: 8.5             # strengthen box regression CIoU gain
+    dfl: 2.0             # strengthen distribution focal loss gain
+    hsv_h: 0.0           # monochrome manga: disable hue jitter
+    hsv_s: 0.0           # monochrome manga: disable saturation jitter
+    hsv_v: 0.3           # preserve exposure/value jitter
+    degrees: 2.0         # handle scan tilt
+    plots: false         # reduce epoch-end peak RAM and save ~10 min wall clock
+    save_period: 3       # save periodic checkpoints for post-run re-ranking
     # Explicit optimizer for CUDA paths (Colab/Lightning/Vast/RunPod).
     # `auto` ignores manual lr0; explicit MuSGD makes lr0 effective.
     # stage1.py forces AdamW on MPS (MuSGD bf16 type-cast issues).

@@ -105,10 +105,9 @@ train-stage2 = "python scripts/train/stage2.py"
 
 # --- M3-local experiment: stratified subset + overnight MPS training ---
 # 1. subset-stage1  — build stage1_sliced_subset (symlinks, ~15 min dataset)
-# 2. train-stage1-m3 — 40 epochs on the subset; extra overrides via
-#    `pixi run train-stage1-m3 -- --override key=value`
+# 2. train-stage1-m3 — run stage1 on the subset with MPS (epochs/patience from config/pipeline.yaml)
 subset-stage1 = "python scripts/train/subset_stage1.py"
-train-stage1-m3 = "python scripts/train/stage1.py --override training.stage1.device=mps --override training.stage1.use_subset=true --override training.stage1.batch=8 --override training.stage1.epochs=40 --override training.stage1.patience=12"
+train-stage1-m3 = "python scripts/train/stage1.py --override training.stage1.device=mps --override training.stage1.use_subset=true --override training.stage1.batch=8"
 # Leak-safe chained run: one epoch per process via resume (see m3_chain.sh).
 train-stage1-m3-chain = "bash scripts/train/m3_chain.sh"
 

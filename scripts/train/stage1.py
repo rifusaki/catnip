@@ -231,10 +231,22 @@ def main() -> None:
                 "patience": stage1.patience,
                 "freeze": stage1.freeze,
                 "mosaic": stage1.mosaic,
+                "close_mosaic": stage1.close_mosaic,
                 "lr0": stage1.lr0,
                 "cos_lr": stage1.cos_lr,
+                "weight_decay": stage1.weight_decay,
+                "cls_pw": stage1.cls_pw,
+                "box": stage1.box,
+                "dfl": stage1.dfl,
+                "hsv_h": stage1.hsv_h,
+                "hsv_s": stage1.hsv_s,
+                "hsv_v": stage1.hsv_v,
+                "degrees": stage1.degrees,
+                "plots": stage1.plots,
+                "save_period": stage1.save_period,
                 "project": str(settings.paths.runs_dir / "detect"),
                 "name": run_name,
+                "exist_ok": True,
                 "amp": False if str(stage1.device).lower() == "mps" else True,
                 # Explicit optimizer: `auto` ignores manual lr0 (config sets
                 # MuSGD for CUDA paths; MPS override below re-forces AdamW).
@@ -246,10 +258,16 @@ def main() -> None:
             if str(stage1.device).lower() == "mps":
                 train_kwargs["optimizer"] = "AdamW"
 
-            # Only attempt resume on the first try with the original batch size.
-            # Changing batch size invalidates optimizer state, so OOM retries
-            # start fresh with a smaller batch.
-            if args.resume is not None and attempt == 0:
+            # Resuming must maintain batch size to keep optimizer state valid.
+            # In chained runs, fail loudly on OOM rather than silently restarting
+            # a fresh run into an incremented directory.
+            if args.resume is not None:
+                if attempt > 0:
+                    logger.error(
+                        "OOM on batch=%d during resume from %s. Refusing silent fresh restart. Aborting.",
+                        batch_attempts[attempt - 1], args.resume,
+                    )
+                    sys.exit(1)
                 train_kwargs["resume"] = True
 
             model.train(**train_kwargs)

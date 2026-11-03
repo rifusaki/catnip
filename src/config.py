@@ -118,6 +118,17 @@ class Stage1TrainingParams(BaseModel):
     use_subset: bool
     deterministic: bool
     subset: Stage1SubsetParams
+    close_mosaic: int = 10
+    weight_decay: float = 0.0005
+    cls_pw: float = 0.0
+    box: float = 7.5
+    dfl: float = 1.5
+    hsv_h: float = 0.015
+    hsv_s: float = 0.7
+    hsv_v: float = 0.4
+    degrees: float = 0.0
+    plots: bool = True
+    save_period: int = -1
 
 
 class Stage2TrainingParams(BaseModel):
