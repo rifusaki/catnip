@@ -8,38 +8,114 @@ version = "0.2.0"
 [pypi-options]
 extra-index-urls = ["https://download.pytorch.org/whl/xpu"]
 
-[tasks]
-
 [dependencies]
 python = "3.11.*"
 numpy = "<2"
 ipykernel = ">=6.30.1,<7"
 scikit-learn = ">=1.7.2,<2"
 matplotlib = ">=3.10.6,<4"
-ultralytics = ">=8.4.66,<9"
+ultralytics = ">=8.4.183,<9"
 pydantic = ">=2.11.9,<3"
 pydantic-settings = ">=2.11.0,<3"
 omegaconf = ">=2.3.0,<3"
 sahi = ">=0.11.36,<0.13"
 requests = ">=2.34.2,<3"
 python-dotenv = ">=1.2.2,<2"
+kaggle = ">=2.2.3,<3"
 
 [pypi-dependencies]
 torchsummary = ">=1.5.1, <2"
 opencv-python = ">=4.10.0,<5"
 manga109api = ">=0.3.1, <0.4"
 
-# home server running on WSL
-[target.linux-64.pypi-dependencies]
-# Install PyTorch with XPU support - IPEX is no longer needed for PyTorch 2.6+
-# as Intel XPU support is now integrated into PyTorch itself
-torch = "==2.6.0+xpu"
-torchvision = "==0.21.0+xpu"
-torchaudio = "==2.6.0+xpu"
+# Home server (WSL) - Intel XPU: re-add a feature with
+#   [feature.xpu.target.linux-64.pypi-dependencies] torch = "==2.6.0+xpu" ...
+# when the server goes live. Dropped 2026-10-14: conda->pypi pins from fresh
+# solves conflict with the +xpu local version label, and no XPU host runs yet.
+
+# CUDA hosts (Lightning Studio T4, Colab). `pixi run -e cuda ...`
+# Build-string pin selects the conda-forge CUDA variant (default is cpu_mkl).
+[feature.cuda.system-requirements]
+cuda = "12.6"
+
+[feature.cuda.target.linux-64.dependencies]
+opencv = ">=4.10,<5"
+pytorch = { version = "2.6.0.*", build = "*cuda*" }
+torchvision = { version = "0.21.0.*", build = "*cuda*" }
 
 # dev machine
 [target.osx-arm64.dependencies]
-# macOS uses conda PyTorch (no Intel XPU)
-pytorch = "==2.4.1"
-torchvision = "==0.19.1"
+# macOS uses conda PyTorch (no Intel XPU).
+# 2.4.1 had a per-iteration MPS allocation leak (YOLO train grew ~9 MB/iter,
+# empty_cache could not reclaim; two jetsam kills on the 16 GB Air). 2.6.0
+# is the same pairing the cuda feature uses on linux.
+pytorch = "==2.6.0"
+torchvision = "==0.21.0"
 
+# ---------------------------------------------------------------------------
+# Optional feature: kagglehub for sync/publish scripts.
+#
+# Activate with:  pixi run -e kaggle kaggle-sync
+# Auth: set KAGGLE_API_TOKEN in .env or env var
+# ---------------------------------------------------------------------------
+[feature.kaggle.pypi-dependencies]
+kagglehub = ">=1.0.2,<2"
+
+[environments]
+# kaggle env stacks the default deps + the kaggle feature.  Used by the
+# kaggle-sync / kaggle-publish tasks.  Training/inference: default env on
+# mac, `-e xpu` on the home server (Intel), `-e cuda` on Lightning/Colab.
+kaggle = ["kaggle"]
+cuda = ["cuda"]
+
+# ---------------------------------------------------------------------------
+# Tasks
+#
+# Conventions:
+#   * all paths are relative to the project root (pixi runs tasks there)
+#   * pass-through args: `pixi run <task> -- <extra args>` appends to cmd
+#   * `kaggle-*` tasks require `-e kaggle` (kaggle/kagglehub not in default)
+# ---------------------------------------------------------------------------
+[tasks]
+# --- Unify pipeline (data prep, runs on the dev machine) ---
+# Pass-through: `pixi run <task> -- <extra args>` appends to the cmd.
+unify-izutsumi  = "python scripts/unify/izutsumi.py"
+unify-manga109  = "python scripts/unify/manga109.py"
+unify-coco-heads = "python scripts/unify/coco_heads.py --input-dir catnip-data/data/AnimeHeadsv3 --output-dir catnip-data/data/staging/ah_coco"
+unify-yolo-heads = "python scripts/unify/yolo_heads.py"
+unify-stage1    = "python scripts/unify/stage1.py --slice --slice-workers 4"
+
+# Rename YOLO dataset files to safe, deterministic names (Kaggle silently
+# rejects filenames with apostrophes/spaces/&/non-ASCII). Run before kaggle-sync.
+sanitize-names  = "python scripts/unify/sanitize_names.py"
+
+# Convenience: full data-prep pipeline (unify + slice).  No command of its
+# own — `depends-on` runs each task in order.
+data-prep = { depends-on = [
+    "unify-izutsumi",
+    "unify-manga109",
+    "unify-coco-heads",
+    "unify-yolo-heads",
+    "unify-stage1",
+] }
+
+# --- Training (runs in pixi env; device selected via config/CLI) ---
+train-stage1 = "python scripts/train/stage1.py"
+train-stage2 = "python scripts/train/stage2.py"
+
+# --- M3-local experiment: stratified subset + overnight MPS training ---
+# 1. subset-stage1  — build stage1_sliced_subset (symlinks, ~15 min dataset)
+# 2. train-stage1-m3 — run stage1 on the subset with MPS (epochs/patience from config/pipeline.yaml)
+subset-stage1 = "python scripts/train/subset_stage1.py"
+train-stage1-m3 = "python scripts/train/stage1.py --override training.stage1.device=mps --override training.stage1.use_subset=true --override training.stage1.batch=8"
+# Leak-safe chained run: one epoch per process via resume (see m3_chain.sh).
+train-stage1-m3-chain = "bash scripts/train/m3_chain.sh"
+
+# --- Kaggle sync (local → Kaggle dataset version) ---
+# Requires the kaggle env + KAGGLE_API_TOKEN:  pixi run -e kaggle kaggle-sync
+kaggle-sync = "python scripts/kaggle_sync.py"
+
+# --- Kaggle publish (notebook session → catnip-stage1-output dataset) ---
+# This is what the third cell of notebooks/catnipKaggle.ipynb calls.
+# Locally:  pixi run -e kaggle kaggle-publish -- --output-dir ...
+kaggle-publish = "python scripts/kaggle_publish.py"

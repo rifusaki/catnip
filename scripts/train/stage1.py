@@ -7,10 +7,16 @@ Handles OOM errors with automatic batch-size reduction.
 """
 
 import argparse
+import gc
 import logging
 import os
 import sys
 from pathlib import Path
+
+# torchvision::nms has no MPS implementation; without this every
+# epoch-end validation dies with NotImplementedError. Set before torch
+# import so op dispatch sees it. Harmless on cuda/cpu (MPS-only behavior).
+os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
 import torch
 from ultralytics import YOLO
@@ -23,6 +29,76 @@ from src.cli import _apply_overrides
 from src.training.preparation import save_best_model
 
 logger = logging.getLogger(__name__)
+
+# Batches between mid-epoch torch.mps.empty_cache() calls (see
+# _install_mps_cache_guard). 50 ≈ once every ~6 min on the M3 subset run.
+MPS_CACHE_CLEAR_INTERVAL = 50
+
+_mps_workers_patched = False
+
+
+def _install_mps_cache_guard(model: YOLO, device: str) -> None:
+    """Bound MPS allocator growth mid-epoch (macOS jetsam protection).
+
+    ultralytics clears the MPS cache between epochs only. On unified-memory
+    Macs with foreground apps resident, allocator pool growth within a
+    single epoch is fatal: observed 4.3G -> 8.2G driver-allocated over ~650
+    iters (batch 16), at which point macOS jetsam killed the process
+    ("low-swap", exit 137) on a 16 GB machine (ultralytics#22621 pattern).
+    Emptying the cache every N batches keeps growth bounded; the brief
+    allocator hitch is amortized over the epoch.
+    """
+    if str(device).lower() != "mps":
+        return
+
+    batches_since_clear = 0
+    total_batches = 0
+
+    def clear_mps_cache(trainer) -> None:
+        nonlocal batches_since_clear, total_batches
+        batches_since_clear += 1
+        total_batches += 1
+        if batches_since_clear >= MPS_CACHE_CLEAR_INTERVAL:
+            gc.collect()
+            before = torch.mps.driver_allocated_memory() / 1e9
+            torch.mps.empty_cache()
+            after = torch.mps.driver_allocated_memory() / 1e9
+            logger.info(
+                "mps guard @batch %d: gc+empty_cache %.2fG -> %.2fG, torch-allocated %.2fG",
+                total_batches, before, after,
+                torch.mps.current_allocated_memory() / 1e9,
+            )
+            batches_since_clear = 0
+
+    model.add_callback("on_train_batch_end", clear_mps_cache)
+
+
+def _patch_mps_workers(workers: int) -> None:
+    """Restore configured dataloader workers on MPS (process-local patch).
+
+    ultralytics BaseTrainer.__init__ forces ``self.args.workers = 0`` for
+    cpu/mps devices ("faster CPU training as time dominated by inference").
+    That assumption is inverted for yolo26n @640: the nano model's compute
+    is tiny and CPU-side augmentation (mosaic, HSV, jpeg decode) dominates —
+    the 2.8 s/it baseline on M3 was single-threaded dataloading, not GPU.
+    Guarded to MPS and to workers > 0; every other path keeps upstream
+    behaviour. Patched once; the OOM retry loop may re-enter train().
+    """
+    global _mps_workers_patched
+    if _mps_workers_patched or workers <= 0:
+        return
+
+    from ultralytics.engine import trainer as trainer_module
+
+    original_init = trainer_module.BaseTrainer.__init__
+
+    def init_with_mps_workers(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        if self.device.type == "mps" and self.args.workers == 0:
+            self.args.workers = workers
+
+    trainer_module.BaseTrainer.__init__ = init_with_mps_workers
+    _mps_workers_patched = True
 
 
 def _setup_logging(verbose: bool = False) -> None:
@@ -77,10 +153,21 @@ def main() -> None:
 
     # --- Validate pre-unified training data ---
     # Prefer the SAHI-sliced dataset when available (train/inference parity).
-    # Fall back to the unified (full-image) dataset otherwise.
+    # Fall back to the unified (full-image) dataset otherwise. use_subset
+    # (M3-local profile) requires the stratified subset from
+    # `pixi run subset-stage1`.
+    subset_yaml = settings.paths.stage1_sliced_subset_dir / "dataset.yaml"
     sliced_yaml = settings.paths.stage1_sliced_dir / "dataset.yaml"
     unified_yaml = settings.paths.unified_dir / "dataset.yaml"
-    if sliced_yaml.exists():
+    if stage1.use_subset:
+        if not subset_yaml.exists():
+            logger.error(
+                "use_subset=true but %s not found. Run 'pixi run subset-stage1' first.",
+                subset_yaml,
+            )
+            sys.exit(1)
+        dataset_yaml = subset_yaml
+    elif sliced_yaml.exists():
         dataset_yaml = sliced_yaml
     elif unified_yaml.exists():
         dataset_yaml = unified_yaml
@@ -104,6 +191,20 @@ def main() -> None:
         "Starting Stage 1 training: model=%s, device=%s, epochs=%d, batch=%d",
         model_path, stage1.device, stage1.epochs, stage1.batch,
     )
+    logger.info("Dataset: %s", dataset_yaml)
+
+    # Ultralytics clamps dataloader workers to 0 on MPS; restore them so
+    # CPU-side augmentation overlaps GPU compute (see _patch_mps_workers).
+    if str(stage1.device).lower() == "mps":
+        _patch_mps_workers(stage1.workers)
+
+    # Subset (M3-local) runs get their own run dir and model name so they
+    # can never clobber the canonical full-dataset artifacts.
+    run_name = "stage1_m3" if stage1.use_subset else "stage1"
+    target_name = (
+        "yolo26_stage1_body_head_face_m3.pt" if stage1.use_subset
+        else "yolo26_stage1_body_head_face.pt"
+    )
 
     # --- Train with OOM retry ---
     batch_attempts = [stage1.batch, 4, 2]
@@ -118,6 +219,7 @@ def main() -> None:
 
         try:
             model = YOLO(model_path)
+            _install_mps_cache_guard(model, stage1.device)
 
             train_kwargs: dict = {
                 "data": str(dataset_yaml),
@@ -129,21 +231,43 @@ def main() -> None:
                 "patience": stage1.patience,
                 "freeze": stage1.freeze,
                 "mosaic": stage1.mosaic,
+                "close_mosaic": stage1.close_mosaic,
                 "lr0": stage1.lr0,
                 "cos_lr": stage1.cos_lr,
+                "weight_decay": stage1.weight_decay,
+                "cls_pw": stage1.cls_pw,
+                "box": stage1.box,
+                "dfl": stage1.dfl,
+                "hsv_h": stage1.hsv_h,
+                "hsv_s": stage1.hsv_s,
+                "hsv_v": stage1.hsv_v,
+                "degrees": stage1.degrees,
+                "plots": stage1.plots,
+                "save_period": stage1.save_period,
                 "project": str(settings.paths.runs_dir / "detect"),
-                "name": "stage1",
+                "name": run_name,
+                "exist_ok": True,
                 "amp": False if str(stage1.device).lower() == "mps" else True,
+                # Explicit optimizer: `auto` ignores manual lr0 (config sets
+                # MuSGD for CUDA paths; MPS override below re-forces AdamW).
+                "optimizer": stage1.optimizer,
+                "deterministic": stage1.deterministic,
             }
             
             # Force AdamW on MPS to avoid MuSGD bf16 type casting issues
             if str(stage1.device).lower() == "mps":
                 train_kwargs["optimizer"] = "AdamW"
 
-            # Only attempt resume on the first try with the original batch size.
-            # Changing batch size invalidates optimizer state, so OOM retries
-            # start fresh with a smaller batch.
-            if args.resume is not None and attempt == 0:
+            # Resuming must maintain batch size to keep optimizer state valid.
+            # In chained runs, fail loudly on OOM rather than silently restarting
+            # a fresh run into an incremented directory.
+            if args.resume is not None:
+                if attempt > 0:
+                    logger.error(
+                        "OOM on batch=%d during resume from %s. Refusing silent fresh restart. Aborting.",
+                        batch_attempts[attempt - 1], args.resume,
+                    )
+                    sys.exit(1)
                 train_kwargs["resume"] = True
 
             model.train(**train_kwargs)
@@ -167,15 +291,15 @@ def main() -> None:
     # --- Save best model ---
     best_path = save_best_model(
         project_dir=settings.paths.runs_dir / "detect",
-        run_name="stage1",
+        run_name=run_name,
         target_dir=settings.paths.model_dir,
-        target_name="yolo26_stage1_body_head_face.pt",
+        target_name=target_name,
     )
 
     if best_path is None:
         logger.error(
             "Failed to save best model. best.pt not found in %s",
-            settings.paths.runs_dir / "detect" / "stage1" / "weights",
+            settings.paths.runs_dir / "detect" / run_name / "weights",
         )
         sys.exit(1)
 

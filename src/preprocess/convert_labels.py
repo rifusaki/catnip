@@ -47,7 +47,7 @@ def convert_annotations_directory(
             }
           ],
           "task": {
-            "data": {"image": "gs://catnip-data/data/manga/v09/0043.jpg"}
+            "data": {"image": "https://data.example.com/data/manga/v09/0043.jpg"}
           }
         }
 

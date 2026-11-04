@@ -17,7 +17,7 @@ dependencies = [
     "scikit-learn>=1.7,<2",
     "torch>=2.0",
     "matplotlib>=3.10,<4",
-    "ultralytics>=8.4,<9",
+    "ultralytics>=8.4.183,<9",
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.11,<3",
     "omegaconf>=2.3,<3",
@@ -30,6 +30,12 @@ dependencies = [
 
 [project.scripts]
 catnip = "src.cli:main"
+
+[project.optional-dependencies]
+# Kaggle upload (via kagglehub)
+kaggle = [
+    "kagglehub>=0.3,<1",
+]
 
 [tool.setuptools.packages.find]
 include = ["src*"]
