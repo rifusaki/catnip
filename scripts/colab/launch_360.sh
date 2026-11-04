@@ -46,16 +46,23 @@ if [[ -z "$COLAB_BIN" ]]; then
 fi
 
 echo "[1/4] Checking Colab session..."
-if ! "$COLAB_BIN" status -s "$SESSION_NAME" &>/dev/null; then
+if ! "$COLAB_BIN" sessions | grep -q "$SESSION_NAME"; then
     echo "Allocating fresh L4 GPU session on Colab: '${SESSION_NAME}'..."
     "$COLAB_BIN" new -s "$SESSION_NAME" --gpu L4
-    echo "Session allocated successfully!"
+    echo "Session allocated! Waiting for kernel initialization..."
+    for i in {1..30}; do
+        if "$COLAB_BIN" status -s "$SESSION_NAME" 2>/dev/null | grep -q "IDLE"; then
+            echo "Kernel is READY."
+            break
+        fi
+        sleep 2
+    done
 else
     echo "Reusing active session: '${SESSION_NAME}'"
 fi
 
 echo "[2/4] Verifying GPU status on remote VM..."
-"$COLAB_BIN" exec -s "$SESSION_NAME" -c "!nvidia-smi" || true
+echo '!nvidia-smi' | "$COLAB_BIN" exec -s "$SESSION_NAME" || true
 
 echo "[3/4] Preparing remote payload with R2 credentials..."
 PAYLOAD_FILE=$(mktemp /tmp/remote_runner_payload.XXXXXX.py)
@@ -77,7 +84,7 @@ echo "  TIP: If running in tmux, press 'Ctrl+B' then 'D' to detach."
 echo "  Reattach anytime with: tmux attach -t catnip-training"
 echo "----------------------------------------------------------"
 
-"$COLAB_BIN" exec -s "$SESSION_NAME" -f "$PAYLOAD_FILE"
+"$COLAB_BIN" exec -s "$SESSION_NAME" --timeout 86400 -f "$PAYLOAD_FILE"
 
 echo "=========================================================="
 echo "  Training process finished! Check R2 for saved weights.  "

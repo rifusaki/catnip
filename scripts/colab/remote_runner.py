@@ -49,8 +49,8 @@ s3 = boto3.client(
 
 # Test R2 connectivity
 try:
-    s3.head_bucket(Bucket=BUCKET)
-    print(f"[RemoteRunner] R2 bucket '{BUCKET}' verified successfully.")
+    resp = s3.list_objects_v2(Bucket=BUCKET, MaxKeys=1)
+    print(f"[RemoteRunner] R2 bucket '{BUCKET}' verified successfully (KeyCount: {resp.get('KeyCount', 0)}).")
 except Exception as e:
     raise ConnectionError(f"Failed to access R2 bucket '{BUCKET}': {e}")
 
