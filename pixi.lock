@@ -10356,7 +10356,7 @@ packages:
   license: BSD-3-Clause
   license_family: BSD
   purls:
-  - pkg:pypi/jupyter-client?source=hash-mapping
+  - pkg:pypi/jupyter-client?source=compressed-mapping
   run_exports: {}
   size: 118962
   timestamp: 1787929615607
@@ -10662,7 +10662,7 @@ packages:
   license: BSD-3-Clause
   license_family: BSD
   purls:
-  - pkg:pypi/nbformat?source=hash-mapping
+  - pkg:pypi/nbformat?source=compressed-mapping
   run_exports: {}
   size: 107750
   timestamp: 1787133512599

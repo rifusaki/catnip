@@ -26,3 +26,4 @@ node_modules/
 vibe-recovery-*.md
 uv.lock
 nsfw_report.json
+.vscode/
