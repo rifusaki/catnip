@@ -289,7 +289,7 @@ def classify_domain(path: Path) -> str:
     name_lower = str(path).lower()
     if "manga" in name_lower or "izutsumi" in name_lower:
         return "manga_lineart"
-    if "ah_" in name_lower or "anime" in name_lower:
+    if any(prefix in name_lower for prefix in ("ahv", "ahaf", "ah_", "ah-", "anime", "heads")):
         return "anime_illustration"
     return "general"
 
@@ -412,12 +412,16 @@ def main() -> None:
     logger.info("Evaluation complete: %d evaluated images, %d skipped due to read errors.", evaluated_count, skipped_images)
 
     # 7. Generate Visual Comparison Panels
-    visual_candidates.sort(key=lambda x: x[0], reverse=True)
-    n_visuals = min(args.visual_samples, len(visual_candidates))
+    # Prioritize panels that contain actual ground truth annotations (gt_boxes > 0)
+    # and exhibit meaningful model divergence.
+    gt_positive_candidates = [c for c in visual_candidates if len(c[2]) > 0]
+    selection_pool = gt_positive_candidates if gt_positive_candidates else visual_candidates
+    selection_pool.sort(key=lambda x: x[0], reverse=True)
+    n_visuals = min(args.visual_samples, len(selection_pool))
     logger.info("Rendering %d side-by-side visual comparison panels...", n_visuals)
 
     for v_idx in range(n_visuals):
-        _, img_path, gt_boxes, preds_this_img = visual_candidates[v_idx]
+        _, img_path, gt_boxes, preds_this_img = selection_pool[v_idx]
         image = cv2.imread(str(img_path))
         if image is not None:
             render_comparison_grid(
