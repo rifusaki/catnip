@@ -46,7 +46,27 @@ if [[ -z "$COLAB_BIN" ]]; then
 fi
 
 echo "[1/4] Checking Colab session..."
-if ! "$COLAB_BIN" sessions | grep -q "$SESSION_NAME"; then
+
+session_exists=false
+if "$COLAB_BIN" sessions 2>/dev/null | grep -q "$SESSION_NAME"; then
+    session_exists=true
+fi
+
+# Verify if the existing session is truly responsive and alive
+session_alive=false
+if [[ "$session_exists" == "true" ]]; then
+    status_output=$("$COLAB_BIN" status -s "$SESSION_NAME" 2>&1 || true)
+    if echo "$status_output" | grep -Eq "IDLE|BUSY"; then
+        session_alive=true
+        echo "Reusing active, healthy session: '${SESSION_NAME}'"
+    else
+        echo "Session '${SESSION_NAME}' is present in local cache but remote runtime is unreachable/terminated."
+        echo "Pruning stale session from Colab CLI state..."
+        "$COLAB_BIN" stop -s "$SESSION_NAME" 2>/dev/null || true
+    fi
+fi
+
+if [[ "$session_alive" != "true" ]]; then
     echo "Allocating fresh L4 GPU session on Colab: '${SESSION_NAME}'..."
     "$COLAB_BIN" new -s "$SESSION_NAME" --gpu L4
     echo "Session allocated! Waiting for kernel initialization..."
@@ -57,8 +77,6 @@ if ! "$COLAB_BIN" sessions | grep -q "$SESSION_NAME"; then
         fi
         sleep 2
     done
-else
-    echo "Reusing active session: '${SESSION_NAME}'"
 fi
 
 echo "[2/4] Verifying GPU status on remote VM..."
