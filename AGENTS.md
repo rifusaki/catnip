@@ -95,6 +95,7 @@ model.val(data=str(settings.paths.stage1_sliced_dir / 'dataset.yaml'), split='te
 pixi run benchmark-faces --sample 200        # Benchmarks face detection (Catnip, Fuyucchi, zymk9, DeepGHS)
 pixi run benchmark-heads --sample 200        # Benchmarks head detection (Catnip vs DeepGHS Head Nano)
 pixi run benchmark-faces --download-only     # Downloads & caches all external benchmark weights
+pixi run benchmark-presentation              # Headlessly executes & embeds results into catnipBenchmarkPresentation.ipynb
 ```
 
 ---
