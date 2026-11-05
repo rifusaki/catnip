@@ -34,6 +34,8 @@ from pathlib import Path
 
 # Enable MPS fallback op dispatch for macOS before torch imports
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+if os.environ.get("CUDA_VISIBLE_DEVICES") == "cuda":
+    del os.environ["CUDA_VISIBLE_DEVICES"]
 
 # Ensure repository root is on sys.path
 REPO_ROOT = Path(__file__).resolve().parents[2]

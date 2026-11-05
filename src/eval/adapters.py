@@ -259,17 +259,34 @@ class LegacyYoloV5Detector(BaseDetector):
         self.weight_size_bytes = self.model_path.stat().st_size
         logger.info("Loading legacy YOLOv5 %s via torch.hub on %s", self.name, self.device)
 
+        # YOLOv5's select_device expects '0' or 'cpu' for devices; passing literal
+        # 'cuda' triggers a bug in YOLOv5 that sets os.environ['CUDA_VISIBLE_DEVICES'] = 'cuda',
+        # poisoning the process and breaking CUDA for all subsequent models.
+        hub_device = "0" if self.device.startswith("cuda") else ("cpu" if self.device == "mps" else self.device)
+        orig_cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+
         try:
             self.model = torch.hub.load(
                 "ultralytics/yolov5",
                 "custom",
                 path=str(self.model_path),
                 trust_repo=True,
-                device=self.device,
+                device=hub_device,
             )
+            if self.device != hub_device:
+                try:
+                    self.model.to(self.device)
+                except Exception as to_err:
+                    logger.warning("Could not move legacy YOLOv5 to %s: %s", self.device, to_err)
         except Exception as err:
             logger.error("Failed to load legacy YOLOv5 model via torch.hub: %s", err)
             raise
+        finally:
+            # Law 3 — Atomic Predictability: Restore or sanitize CUDA_VISIBLE_DEVICES
+            if orig_cuda_visible is not None:
+                os.environ["CUDA_VISIBLE_DEVICES"] = orig_cuda_visible
+            elif os.environ.get("CUDA_VISIBLE_DEVICES") == "cuda":
+                del os.environ["CUDA_VISIBLE_DEVICES"]
 
         try:
             self.parameter_count = sum(p.numel() for p in self.model.parameters())

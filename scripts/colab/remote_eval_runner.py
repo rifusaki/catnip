@@ -28,6 +28,9 @@ RESULTS_PREFIX = "results/benchmarks"
 EVAL_SAMPLE = os.environ.get("CATNIP_EVAL_SAMPLE", "0")
 EVAL_DEVICE = os.environ.get("CATNIP_EVAL_DEVICE", "cuda")
 
+if os.environ.get("CUDA_VISIBLE_DEVICES") == "cuda":
+    del os.environ["CUDA_VISIBLE_DEVICES"]
+
 if not R2_ACCESS_KEY_ID or not R2_SECRET_ACCESS_KEY:
     raise ValueError(
         "Missing R2_ACCESS_KEY_ID or R2_SECRET_ACCESS_KEY environment variables."
