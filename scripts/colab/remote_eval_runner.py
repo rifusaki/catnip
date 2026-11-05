@@ -228,14 +228,28 @@ for target, models in EVAL_TARGETS:
         "--output-dir", str(output_dir),
     ]
     print(f"[RemoteEval] Launching {target} benchmark: {' '.join(cmd)}")
-    try:
-        subprocess.run(cmd, check=True)
-    except subprocess.CalledProcessError as err:
+    sys.stdout.flush()
+
+    # Stream child process stdout/stderr directly through Jupyter's display system
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    if proc.stdout:
+        for line in proc.stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+    retcode = proc.wait()
+
+    if retcode != 0:
         partial = sync_results(target, output_dir)
         raise RuntimeError(
-            f"{target} benchmark failed with exit code {err.returncode}; "
+            f"{target} benchmark failed with exit code {retcode}; "
             f"{partial} partial artifact(s) from this run synced to s3://{BUCKET}/{RESULTS_PREFIX}/{target}/."
-        ) from err
+        )
     sync_results(target, output_dir, prune_visuals=True)
 
 print(f"[RemoteEval] All benchmark artifacts synchronized to s3://{BUCKET}/{RESULTS_PREFIX}/. Done!")
