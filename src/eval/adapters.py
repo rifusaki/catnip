@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import urllib.request
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
