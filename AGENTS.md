@@ -32,6 +32,8 @@ Catnip is a two-stage manga character detection and re-identification pipeline d
 | SAHI Inference | `src/detection/sahi_extractor.py` | ✅ **Working.** SAHI wrapper using Non-Maximum Merging (NMM). |
 | Stage 1 Deliverable | `models/yolo26_stage1_body_head_face_m3.pt` | ✅ **Trained.** Achieved mAP50 0.696 on 16k full test split. |
 | Model Benchmarks | `src/eval/`, `scripts/eval/benchmark_faces.py` | ✅ **Fully working.** Multi-model comparative benchmark for faces and heads (Catnip vs Fuyucchi, zymk9, DeepGHS). |
+| Remote Eval Runner | `scripts/colab/remote_eval_runner.py`, `launch_eval_360.sh` | ✅ **Fully working.** Automated headless evaluation runner driven via 360 WSL / Colab CLI syncing artifacts to R2. |
+| Presentation Notebook | `notebooks/catnipBenchmarkPresentation.ipynb` | ✅ **Fully working.** Light Mode presentation notebook with live 16k test metrics, domain breakdowns, and visual galleries. |
 | Stage 2 Training | `scripts/train/stage2.py` | ⚠️ **Scaffold.** Prepares triplet dataset; PyTorch triplet training loop is pending. |
 | ReID Modules | `src/reid/` | ⚠️ **Scaffold.** Model architecture, sampler, and FAISS indexer need implementation. |
 | CLI Interface | `src/cli.py` | ⚠️ **Stubbed.** Subcommands `extract`, `embed`, `match` have placeholder error exits. |
@@ -57,6 +59,24 @@ Catnip is a two-stage manga character detection and re-identification pipeline d
 
 ### Gotcha 5: CUDA Environment on Linux/VMs
 * **Rule:** On Linux, Colab, or Spot instances, use `pixi run -e cuda ...`. The conda build string pin (`build = "*cuda*"`) in `pixi.toml` ensures compatibility with CUDA 12.6 without pip wheel collisions.
+
+### Gotcha 6: Dataset Annotation Boundaries in Multi-Domain Benchmarks (Head vs Face)
+* **Symptom:** Evaluating `--target face` on anime illustration datasets (`ahv1`, `ahv2`, `ahv3`, `ahaf`) yields $0.000$ mAP, and external anime face detectors hallucinate dozens of false positives on non-annotated background elements.
+* **Root Cause:** In Catnip Stage 1 data prep, AnimeHeads datasets are **head-only datasets** (`class 1: head`) and possess **0 ground truth face annotations (`class 2`)**.
+* **Fix:** Always benchmark **face** detection on the annotated Manga Line-Art domain (Manga109 & Izutsumi, 24,785 GT faces). For **head** detection, ground truth exists across both manga and anime illustration domains.
+
+### Gotcha 7: Domain Prefix Matching
+* **Symptom:** Slices from `ah_yolo` and `ah_coco` get dumped into `"general"` instead of `"anime_illustration"`.
+* **Fix:** Slices use filenames prefixed with `ahv1_`, `ahv2_`, `ahv3_`, and `ahaf_`, not simply `ah_`. Always match all prefix variants (`("ahv", "ahaf", "ah_", "ah-", "anime", "heads")`) when stratifying domains.
+
+### Gotcha 8: Visual Comparison Selection Bias
+* **Symptom:** The visual comparison gallery fills entirely with images where `Ground Truth (0)` and `Catnip (0)`, while external peer models hallucinate 35–142 boxes.
+* **Root Cause:** Sorting visual candidates purely by model prediction count variance (`np.std(pred_counts)`) strongly prioritizes background slices with 0 GT boxes where peers hallucinate heavily.
+* **Fix:** In `scripts/eval/benchmark_faces.py`, candidate pools are strictly filtered to slices with `len(gt_boxes) > 0` (`gt_positive_candidates`) before ranking.
+
+### Gotcha 9: Jupyter Kernel Isolation on macOS
+* **Symptom:** Headless notebook execution via `nbclient` defaults to system/Homebrew Python (`/opt/homebrew/bin/python3.14`) due to user-level kernelspecs in `~/Library/Jupyter/kernels/python3`.
+* **Fix:** `scripts/eval/execute_presentation_notebook.py` uses `CurrentEnvKernelSpecManager` to bind execution directly to `sys.executable`, guaranteeing portability across macOS, WSL, and Linux VMs.
 
 ---
 
@@ -110,3 +130,19 @@ Delivered checkpoint: `models/yolo26_stage1_body_head_face_m3.pt` (trained on st
 | | | | Body (0) | 0.729 | 0.435 |
 | | | | Head (1) | 0.638 | 0.349 |
 | | | | Face (2) | 0.719 | 0.340 |
+
+### Comparative Benchmark Deliverables (CUDA Full Test Split, 15,993 Images)
+
+#### Face Detection Benchmark (Manga Line-Art Domain, 24,785 GT Faces)
+| Model | Architecture | Params | Weights | mAP@50 | mAP@50-95 | Recall | Latency |
+|---|---|---|---|---|---|---|---|
+| **Catnip-Stage1** | YOLO26n (640px) | **2.5M** | **5.4 MB** | **0.8823** | **0.5676** | **0.9040** | **14.1 ms** |
+| **deepghs_face_nano** | YOLOv8n (640px) | 3.0M | 6.2 MB | 0.6429 | 0.2367 | 0.7053 | 9.9 ms |
+| **zymk9_face** | YOLOv5s (640px) | 7.2M | 14.8 MB | 0.5326 | 0.2408 | 0.5928 | 12.2 ms |
+| **fuyucchi_face** | YOLOv8x6 (1280px) | 97.3M | 195.4 MB | 0.4579 | 0.1300 | 0.5743 | 76.8 ms |
+
+#### Head Detection Benchmark (15,993 Images, 27,414 GT Heads)
+| Model | Architecture | Params | Weights | Overall mAP@50 | Manga mAP@50 | Anime mAP@50 | Latency |
+|---|---|---|---|---|---|---|---|
+| **Catnip-Stage1** | YOLO26n (640px) | **2.5M** | **5.4 MB** | **0.8555** | **0.9101** | **0.8000** | **13.5 ms** |
+| **deepghs_head_nano** | YOLO11n (640px) | 2.6M | 5.5 MB | 0.4140 | 0.0096 | 0.8000 | 11.7 ms |
