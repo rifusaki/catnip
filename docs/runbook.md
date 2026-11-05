@@ -200,7 +200,7 @@ python scripts/eval/benchmark_faces.py \
 ```
 
 ### Running on Google Colab (GPU)
-Cell 5 in `notebooks/catnipColab.ipynb` runs the benchmark across the 16k test split in seconds immediately after Stage 1 training completes:
+`notebooks/catnipEval.ipynb` is the dedicated evaluation notebook: it verifies the R2 bucket, pulls the sliced test dataset and the trained model (`yolo26_stage1_body_head_face.pt`) from `catnip-canonical`, runs both the face and head benchmarks, and uploads `summary.md`, `metrics.json`, and the `visuals/*.jpg` comparison panels to `s3://catnip-canonical/results/benchmarks/{face,head}/`:
 ```bash
 python scripts/eval/benchmark_faces.py \
     --target face \
@@ -210,6 +210,8 @@ python scripts/eval/benchmark_faces.py \
     --sample 500 \
     --output-dir /content/catnip-data-local/results/benchmarks_face
 ```
+
+For headless execution from `360 WSL`, `scripts/colab/launch_eval_360.sh` allocates the `catnip-eval` Colab GPU session and runs `scripts/colab/remote_eval_runner.py`, which synchronizes all artifacts to the same `results/benchmarks/` prefix.
 
 ---
 
