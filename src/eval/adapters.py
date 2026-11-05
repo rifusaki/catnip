@@ -359,16 +359,30 @@ def get_detector(
     # Case 1: Catnip Stage 1 model
     if norm_name in ("catnip", "catnip-stage1", "catnip_stage1", "catnip_nano"):
         if custom_path is None:
+            from src.config import settings
+
             candidates = [
+                # 1. Full training deliverable (Colab / production run)
+                settings.paths.model_dir / "yolo26_stage1_body_head_face.pt",
+                # 2. Raw best weights from full training run
+                settings.paths.runs_dir / "detect" / "stage1" / "weights" / "best.pt",
+                # 3. Last rolling checkpoint from full training run
+                settings.paths.runs_dir / "detect" / "stage1" / "weights" / "last.pt",
+                # 4. Local repository models directory (full model)
+                REPO_ROOT / "models" / "yolo26_stage1_body_head_face.pt",
+                # 5. Local repository models directory (M3 subset baseline deliverable)
                 REPO_ROOT / "models" / "yolo26_stage1_body_head_face_m3.pt",
-                REPO_ROOT / "runs" / "detect" / "stage1" / "weights" / "best.pt",
-                REPO_ROOT / "runs" / "detect" / "stage1" / "weights" / "last.pt",
+                # 6. M3 subset run weights
+                settings.paths.runs_dir / "detect" / "stage1_m3" / "weights" / "best.pt",
+                REPO_ROOT / "runs" / "detect" / "stage1_m3" / "weights" / "best.pt",
+                # 7. Cached benchmark model
                 DEFAULT_CACHE_DIR / "catnip_stage1.pt",
             ]
             found = next((p for p in candidates if p.exists()), None)
             if not found:
+                search_list = "\n  - ".join(str(p) for p in candidates)
                 raise FileNotFoundError(
-                    "Catnip checkpoint not provided via --catnip-model and no local checkpoint found in candidate paths."
+                    f"Catnip checkpoint not provided via --catnip-model and no checkpoint found in candidates:\n  - {search_list}"
                 )
             custom_path = found
 
