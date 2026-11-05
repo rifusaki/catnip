@@ -42,3 +42,7 @@ include = ["src*"]
 
 [tool.setuptools.package-data]
 catnip = ["config/*.yaml"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

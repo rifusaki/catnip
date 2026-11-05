@@ -32,6 +32,11 @@ YOLO(str(model_path)).val(
     split='test', imgsz=640, device='mps',
 )
 "
+
+# 5. Comparative Evaluation against Anime Face & Head Benchmarks
+pixi run benchmark-faces --sample 200        # Catnip vs Fuyucchi, zymk9, and DeepGHS
+pixi run benchmark-heads --sample 200        # Catnip vs DeepGHS Head Nano
+pixi run benchmark-faces --download-only     # Pre-download and cache catalog weights
 ```
 
 ---
@@ -160,7 +165,55 @@ pixi run train-stage1-m3-chain
 
 ---
 
-## 5. Verification & Failure Modes
+## 5. Comparative Model Evaluation & Benchmarks
+
+The benchmark framework (`scripts/eval/benchmark_faces.py`, `src/eval/`) evaluates Catnip Stage 1 against prominent open-source anime face and head detectors:
+- **`Fuyucch1/yolov8_animeface`** (`yolov8x6` @ 1280px, ~97M params, Safebooru dataset)
+- **`zymk9/yolov5_anime`** (`yolov5s` @ 640px, ~7.2M params, Pixiv dataset)
+- **`deepghs/anime_face_detection`** (`face_detect_v1.4_n` @ 640px, ~3.0M params — direct **Nano peer**)
+- **`deepghs/anime_head_detection`** (`head_detect_v2.0_n_yv11` @ 640px, ~2.6M params — **Head peer**)
+
+### Methodology & Alignment
+1. **Class Remapping:** Isolates Catnip's 3-class system (`0: body`, `1: head`, `2: face`) and remaps target detections (`face` $\rightarrow$ 0, `head` $\rightarrow$ 0) for strict 1:1 evaluation against single-class external detectors.
+2. **COCO Metric Standards:** Computes standard $\text{mAP}_{50}$ and $\text{mAP}_{50-95}$ using greedy matching over unmatched ground truth boxes.
+3. **Domain Stratification:** Reports separate metrics for:
+   - **Manga Line-Art** (`manga109`, `izutsumi`): evaluates adaptation to monochrome line art and screentones.
+   - **Anime Illustrations** (`AnimeHeads`, `ah_`): evaluates performance on colored anime art.
+   - **Overall Combined Split**.
+4. **Visual Disagreement Panels:** Generates side-by-side composite grids in `results/benchmarks/visuals/` highlighting difficult cases (small background faces, screentones, profile angles).
+
+### Running Benchmarks Locally
+```bash
+# Face benchmark (Catnip vs Fuyucchi, zymk9, and DeepGHS Face Nano)
+pixi run benchmark-faces --sample 200 --device mps
+
+# Head benchmark (Catnip vs DeepGHS Head Nano)
+pixi run benchmark-heads --sample 200 --device mps
+
+# Specify custom checkpoint and output dir
+python scripts/eval/benchmark_faces.py \
+    --target face \
+    --catnip-model models/yolo26_stage1_body_head_face_m3.pt \
+    --sample 500 \
+    --device mps \
+    --output-dir results/benchmarks_face
+```
+
+### Running on Google Colab (GPU)
+Cell 5 in `notebooks/catnipColab.ipynb` runs the benchmark across the 16k test split in seconds immediately after Stage 1 training completes:
+```bash
+python scripts/eval/benchmark_faces.py \
+    --target face \
+    --catnip-model /content/catnip-data-local/models/yolo26_stage1_body_head_face.pt \
+    --dataset-yaml /content/catnip-data-local/training/stage1_sliced/dataset.yaml \
+    --device cuda \
+    --sample 500 \
+    --output-dir /content/catnip-data-local/results/benchmarks_face
+```
+
+---
+
+## 6. Verification & Failure Modes
 
 ### Verifying Slicer Parity
 ```python

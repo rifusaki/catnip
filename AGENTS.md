@@ -31,6 +31,7 @@ Catnip is a two-stage manga character detection and re-identification pipeline d
 | Spot VM Bootstrap | `scripts/train/spot_bootstrap.sh` | ✅ **Fully working.** Auto-bootstrap for Vast.ai / RunPod RTX 4090 instances. |
 | SAHI Inference | `src/detection/sahi_extractor.py` | ✅ **Working.** SAHI wrapper using Non-Maximum Merging (NMM). |
 | Stage 1 Deliverable | `models/yolo26_stage1_body_head_face_m3.pt` | ✅ **Trained.** Achieved mAP50 0.696 on 16k full test split. |
+| Model Benchmarks | `src/eval/`, `scripts/eval/benchmark_faces.py` | ✅ **Fully working.** Multi-model comparative benchmark for faces and heads (Catnip vs Fuyucchi, zymk9, DeepGHS). |
 | Stage 2 Training | `scripts/train/stage2.py` | ⚠️ **Scaffold.** Prepares triplet dataset; PyTorch triplet training loop is pending. |
 | ReID Modules | `src/reid/` | ⚠️ **Scaffold.** Model architecture, sampler, and FAISS indexer need implementation. |
 | CLI Interface | `src/cli.py` | ⚠️ **Stubbed.** Subcommands `extract`, `embed`, `match` have placeholder error exits. |
@@ -89,6 +90,11 @@ from src.config import settings
 model = YOLO(str(settings.paths.model_dir / 'yolo26_stage1_body_head_face_m3.pt'))
 model.val(data=str(settings.paths.stage1_sliced_dir / 'dataset.yaml'), split='test', imgsz=640, device='mps')
 "
+
+# Comparative Model Benchmarks
+pixi run benchmark-faces --sample 200        # Benchmarks face detection (Catnip, Fuyucchi, zymk9, DeepGHS)
+pixi run benchmark-heads --sample 200        # Benchmarks head detection (Catnip vs DeepGHS Head Nano)
+pixi run benchmark-faces --download-only     # Downloads & caches all external benchmark weights
 ```
 
 ---

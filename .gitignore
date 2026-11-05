@@ -27,3 +27,5 @@ vibe-recovery-*.md
 uv.lock
 nsfw_report.json
 .vscode/
+results/
+tests/data/
