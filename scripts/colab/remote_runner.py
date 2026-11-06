@@ -139,7 +139,11 @@ LOCAL_DATA_ROOT.mkdir(parents=True, exist_ok=True)
 (LOCAL_DATA_ROOT / "models").mkdir(parents=True, exist_ok=True)
 os.environ["CATNIP_DATA"] = str(LOCAL_DATA_ROOT)
 
-dataset_yaml = LOCAL_DATA_ROOT / "training" / "stage1_sliced" / "dataset.yaml"
+# The dataset dir follows the ARCHIVE KEY's stem, so the v2 archive
+# (compressed/stage1_v2_sliced.tar -> training/stage1_v2_sliced/) needs
+# no runner change; the v1 default keeps resolving training/stage1_sliced.
+ARCHIVE_STEM = STAGE1_DATASET_KEY.rsplit("/", 1)[-1].removesuffix(".tar")
+dataset_yaml = LOCAL_DATA_ROOT / "training" / ARCHIVE_STEM / "dataset.yaml"
 if not dataset_yaml.exists():
     free_gb = shutil.disk_usage("/content").free / 1e9
     print(f"[RemoteRunner] /content free disk: {free_gb:.1f} GB")

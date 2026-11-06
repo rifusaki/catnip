@@ -95,7 +95,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--staging-dir-names", default=DEFAULT_STAGING_DIR_NAMES,
         help="Comma-separated staging source names to unify, resolved under "
-             "<data>/data/staging/ (default: izutsumi,manga109,ah_yolo,ah_coco).",
+             "the staging root (default: izutsumi,manga109,ah_yolo,ah_coco).",
+    )
+    parser.add_argument(
+        "--staging-root", type=Path, default=None,
+        help="Staging root holding <name>/images + <name>/labels "
+             "(default: <data>/data/staging; point at data/staging_enriched "
+             "for the 3-class pseudo-labeled tree).",
     )
     parser.add_argument(
         "--verbose", action="store_true",
@@ -392,8 +398,13 @@ def main() -> None:
 
     # Phase 1 — Collect pairs
     logger.info("Collecting image-label pairs from staging directories …")
+    staging_root = (
+        args.staging_root
+        if args.staging_root is not None
+        else settings.paths.data / "data" / "staging"
+    )
     staging_dirs = [
-        settings.paths.data / "data" / "staging" / name.strip()
+        staging_root / name.strip()
         for name in args.staging_dir_names.split(",")
         if name.strip()
     ]

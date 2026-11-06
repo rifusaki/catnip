@@ -825,9 +825,11 @@ def process_source(
         raise ValueError("AnimeHeads enrichment requires a face box adapter")
 
     records = collect_staging_pairs(staging_dir, limit)
+    total = len(records)
+    logger.info("[%s] %d image(s) to enrich (%s regime)", source_name, total, regime)
 
     enriched: list[ImageRecord] = []
-    for record in records:
+    for index, record in enumerate(records, start=1):
         if record.image_path is None:
             enriched.append(record)
             continue
@@ -843,6 +845,9 @@ def process_source(
                     record.image_path, record.label_path, device=device, adapter=adapter
                 )
             )
+        # Ten-hour full runs must be observable: heartbeats every N images.
+        if index % 500 == 0 or index == total:
+            logger.info("[%s] progress: %d / %d", source_name, index, total)
 
     if regime == REGIME_ANIME:
         _apply_headshot_downsampling(enriched, seed)
