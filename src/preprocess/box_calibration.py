@@ -1,6 +1,6 @@
 """4-parameter face box convention adapter (loose external -> tight Manga109 faces).
 
-External Danbooru-style face detectors (``deepghs_face_x``, ``zymk9_face``)
+External Danbooru-style face detectors (``deepghs_face_s``, ``zymk9_face``)
 localize faces including the forehead and bangs, while ``Manga109`` and
 ``izutsumi`` annotate tight brow-to-chin ``<face>`` boxes. Before external
 predictions can act as Stage 1 training labels, they must be mapped onto the

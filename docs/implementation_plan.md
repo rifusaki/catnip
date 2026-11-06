@@ -39,7 +39,7 @@ Upgrade Catnip Stage 1 to **97–98%+ precision** across both monochrome manga p
 - [x] 2.3 Implement Weighted Box Fusion (WBF), per-class calibrated confidence thresholds (`conf_body`, `conf_head`, `conf_face`), and hierarchical anatomical containment filtering (`face` $\subset$ `head` $\subset$ `body`) in `src/detection/sahi_extractor.py` *(code complete: in-repo WBF — sahi 0.11.36 ships no WBF; face band exemption semantics per spec §2, regression-pinned)*
 
 ## Phase 3: Cross-Dataset Synthetic Pseudo-Labeling Pipeline (`scripts/unify/pseudo_label.py`) [CODE COMPLETE — 3.4 AWAITING DATA RUNS]
-- [x] 3.1 Add teacher model catalog entries (`deepghs_head_x`, `deepghs_face_x`, `deepghs_person_x`, `zymk9_face`) and downloader support in `src/eval/adapters.py` *(code complete: catalog + `get_detector` target validation incl. "body")*
+- [x] 3.1 Add teacher model catalog entries (`deepghs_head_x`, `deepghs_face_s`, `deepghs_person_s`, `zymk9_face`) and downloader support in `src/eval/adapters.py` *(code complete: catalog + `get_detector` target validation incl. "body")*
 - [x] 3.2 Implement `src/preprocess/box_calibration.py` to fit the 4-parameter linear box-regression adapter $(\Delta x_c, \Delta y_c, s_w, s_h)$ on `Manga109` + `izutsumi` `(pred_face, gt_head) -> gt_face` pairs *(code complete: Huber IRLS fit + validation quality floor + `--target-section calibrate` driver in `scripts/unify/pseudo_label.py`; actual fit runs on Colab L4 against the staged teachers, serializing `config/face_box_adapter.json`)*
 - [x] 3.3 Implement `scripts/unify/pseudo_label.py` to generate geometrically verified `head` labels on `data/staging/manga109` and `body` + calibrated `face` labels on `data/staging/{ah_yolo,ah_coco}`, filtering out disembodied headshot-only crops without torsos *(code complete: Rule A/B + IoS verification, enriched output tree — inputs never mutated, rerun-converging writer, deterministic 10% headshot draw)*
 - [ ] 3.4 Re-run `pixi run unify-stage1` (`scripts/unify/stage1.py --slice`) on the fully 3-class annotated staging directories and archive `compressed/stage1_v2_sliced.tar` to Cloudflare R2 (`s3://catnip-canonical/`) ← OPERATIONAL: needs mounted data + teacher runs; `unify-stage1 --staging-dir-names` is wired for the enriched tree and `remote_runner.py` expects `CATNIP_STAGE1_DATASET_KEY=compressed/stage1_v2_sliced.tar`
@@ -123,21 +123,23 @@ pixi run python scripts/validate_notebooks.py notebooks/catnipBenchmarkPresentat
 - [`scripts/unify/stage1.py`](../scripts/unify/stage1.py)
 
 ### Teacher Models (Run Offline on Colab L4 GPU)
+> **2026-11-06 correction:** the originally listed `face_detect_v1.4_x` and `person_detect_v1.2_x` URLs return 404 — deepghs publishes no x-sized face/person checkpoints (verified via the HF repo trees). The catalog (`src/eval/adapters.py`) uses the largest existing variants below.
+
 | Target Class | Target Staging Dir | Teacher Checkpoint(s) | HuggingFace / Source URL |
 |---|---|---|---|
 | **`1: head`** | `data/staging/manga109` | `deepghs_head_x` (`YOLO11x`) + `Catnip-Stage1` | `https://huggingface.co/deepghs/anime_head_detection/resolve/main/head_detect_v2.0_x_yv11/model.pt` |
-| **`2: face`** | `data/staging/{ah_yolo,ah_coco}` | `deepghs_face_x` (`YOLOv8x`) + `zymk9_face` | `https://huggingface.co/deepghs/anime_face_detection/resolve/main/face_detect_v1.4_x/model.pt` |
-| **`0: body`** | `data/staging/{ah_yolo,ah_coco}` | `deepghs_person_x` (`YOLOv8x`) | `https://huggingface.co/deepghs/anime_person_detection/resolve/main/person_detect_v1.2_x/model.pt` |
+| **`2: face`** | `data/staging/{ah_yolo,ah_coco}` | `deepghs_face_s` (`YOLOv8s`) + `zymk9_face` | `https://huggingface.co/deepghs/anime_face_detection/resolve/main/face_detect_v1.4_s/model.pt` |
+| **`0: body`** | `data/staging/{ah_yolo,ah_coco}` | `deepghs_person_s` (`YOLOv8s`) | `https://huggingface.co/deepghs/anime_person_detection/resolve/main/person_detect_v1.2_s/model.pt` |
 
 ### Step-by-Step Algorithmic Contract
 
 #### Step 3.1: Fit the 4-Parameter Face Box Convention Adapter (`src/preprocess/box_calibration.py`)
-External Danbooru face detectors (`deepghs_face_x`, `zymk9_face`) include forehead and bangs, whereas `Manga109` and `izutsumi` annotate tight brow-to-chin `<face>` boxes.
-1. Run `deepghs_face_x` (WBF-fused with `zymk9_face`) on `data/staging/izutsumi` and a 2,000-page sample of `data/staging/manga109`.
+External Danbooru face detectors (`deepghs_face_s`, `zymk9_face`) include forehead and bangs, whereas `Manga109` and `izutsumi` annotate tight brow-to-chin `<face>` boxes.
+1. Run `deepghs_face_s` (WBF-fused with `zymk9_face`) on `data/staging/izutsumi` and a 2,000-page sample of `data/staging/manga109`.
 2. Pair each predicted face $B_{\text{pred}} = (x_c^p, y_c^p, w^p, h^p)$ with its matched ground-truth tight face $B_{\text{gt}} = (x_c^g, y_c^g, w^g, h^g)$ where $\text{IoU} \ge 0.45$.
 3. Fit the 4-parameter affine transformation via Huber/Ridge regression (robust to outliers):
    $$\hat{x}_c = x_c^p + \alpha_x w^p, \quad \hat{y}_c = y_c^p + \alpha_y h^p, \quad \hat{w} = \beta_w w^p, \quad \hat{h} = \beta_h h^p$$
-4. Serialize $(\alpha_x, \alpha_y, \beta_w, \beta_h)$ to `config/face_box_adapter.json` and assert on the validation split that transforming `deepghs_face_x` predictions raises `Manga109` `mAP@75` from `<0.10` to `>0.45`.
+4. Serialize $(\alpha_x, \alpha_y, \beta_w, \beta_h)$ to `config/face_box_adapter.json` and assert on the validation split that transforming `deepghs_face_s` predictions raises `Manga109` `mAP@75` from `<0.10` to `>0.45`.
 
 #### Step 3.2: Generate Verified `head` (`class 1`) Labels on `Manga109`
 For each image and label file in `data/staging/manga109` (which currently contains only `0: body` and `2: face`):
@@ -150,11 +152,11 @@ For each image and label file in `data/staging/manga109` (which currently contai
 #### Step 3.3: Generate Verified `body` (`class 0`) & Calibrated `face` (`class 2`) Labels on `AnimeHeads`
 For each image and label file in `data/staging/ah_yolo` and `data/staging/ah_coco` (which currently contain only `1: head`):
 1. **Calibrated `face` (`class 2`):**
-   - Run `deepghs_face_x` + `zymk9_face` (`conf >= 0.45`).
+   - Run `deepghs_face_s` + `zymk9_face` (`conf >= 0.45`).
    - Keep only face predictions strictly inside a ground-truth `head` box $H_{\text{gt}}$ ($\text{IoS}(F_{\text{pred}}, H_{\text{gt}}) \ge 0.85$, at most 1 face per GT head).
    - Apply the `face_box_adapter.json` shrinkage transform $(\alpha_x, \alpha_y, \beta_w, \beta_h)$ and write as `2 <xc> <yc> <w> <h>`.
 2. **Verified `body` (`class 0`) & Headshot Filtering:**
-   - Run `deepghs_person_x` (`conf >= 0.50`).
+   - Run `deepghs_person_s` (`conf >= 0.50`).
    - Keep predicted `body` boxes $B_{\text{pred}}$ that enclose at least one GT `head` box $H_{\text{gt}}$ ($\text{IoS}(H_{\text{gt}}, B_{\text{pred}}) \ge 0.70$) and actually include a torso ($\text{IoU}(B_{\text{pred}}, H_{\text{gt}}) \le 0.80$, i.e. the body box is significantly larger than just the head).
    - **Dataset Balancing Filter:** If an `AnimeHeads` image has **0 valid `body` boxes** (meaning it is a tightly cropped disembodied avatar/headshot with no torso), **exclude or downsample it by 90%** (`keep_prob = 0.10`). This trims `AnimeHeads` from ~73k raw images down to ~28k–35k **complete 3-class (`body`, `head`, `face`) illustrations**, balancing the ratio against `Manga109` (~10k pages) and eliminating partial-label gradient contradiction.
 

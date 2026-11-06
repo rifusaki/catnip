@@ -191,8 +191,8 @@ def test_benchmark_catalog_integrity() -> None:
     # Pseudo-labeling teachers (scripts/unify/pseudo_label.py); "body" is
     # consumed only by the pseudo-labeling driver, never by the benchmark CLI.
     assert "deepghs_head_x" in BENCHMARK_CATALOG
-    assert "deepghs_face_x" in BENCHMARK_CATALOG
-    assert "deepghs_person_x" in BENCHMARK_CATALOG
+    assert "deepghs_face_s" in BENCHMARK_CATALOG
+    assert "deepghs_person_s" in BENCHMARK_CATALOG
 
     for name, info in BENCHMARK_CATALOG.items():
         assert "url" in info and info["url"].startswith("http")
@@ -211,16 +211,16 @@ def test_pseudo_label_teacher_catalog_sources() -> None:
             "YOLO11x (640px)",
             "head",
         ),
-        "deepghs_face_x": (
-            "https://huggingface.co/deepghs/anime_face_detection/resolve/main/face_detect_v1.4_x/model.pt",
-            "deepghs_face_v1.4_x.pt",
-            "YOLOv8x (640px)",
+        "deepghs_face_s": (
+            "https://huggingface.co/deepghs/anime_face_detection/resolve/main/face_detect_v1.4_s/model.pt",
+            "deepghs_face_v1.4_s.pt",
+            "YOLOv8s (640px)",
             "face",
         ),
-        "deepghs_person_x": (
-            "https://huggingface.co/deepghs/anime_person_detection/resolve/main/person_detect_v1.2_x/model.pt",
-            "deepghs_person_v1.2_x.pt",
-            "YOLOv8x (640px)",
+        "deepghs_person_s": (
+            "https://huggingface.co/deepghs/anime_person_detection/resolve/main/person_detect_v1.2_s/model.pt",
+            "deepghs_person_v1.2_s.pt",
+            "YOLOv8s (640px)",
             "body",
         ),
     }
@@ -253,10 +253,10 @@ def test_get_detector_target_mismatch() -> None:
 
     # Pseudo-labeling teachers obey the same target contract.
     with pytest.raises(ValueError, match="cannot be used for benchmark target 'head'"):
-        get_detector("deepghs_person_x", target="head")
+        get_detector("deepghs_person_s", target="head")
 
     with pytest.raises(ValueError, match="cannot be used for benchmark target 'body'"):
-        get_detector("deepghs_face_x", target="body")
+        get_detector("deepghs_face_s", target="body")
 
 
 @pytest.fixture(scope="module")
@@ -273,13 +273,13 @@ def tiny_yolo_checkpoint(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def test_get_detector_person_teacher_builds_ultralytics_detector(
     tiny_yolo_checkpoint: Path,
 ) -> None:
-    """deepghs_person_x resolves to a working UltralyticsDetector for target='body'."""
-    detector = get_detector("deepghs_person_x", target="body", custom_path=tiny_yolo_checkpoint)
+    """deepghs_person_s resolves to a working UltralyticsDetector for target='body'."""
+    detector = get_detector("deepghs_person_s", target="body", custom_path=tiny_yolo_checkpoint)
 
     assert isinstance(detector, UltralyticsDetector)
     assert detector.target_class_id == 0
     assert detector.imgsz == 640
-    assert detector.architecture == "YOLOv8x (640px)"
+    assert detector.architecture == "YOLOv8s (640px)"
     assert detector.parameter_count > 0
 
 

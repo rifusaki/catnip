@@ -60,18 +60,22 @@ BENCHMARK_CATALOG: dict[str, dict[str, str]] = {
         "type": "ultralytics",
         "default_imgsz": "640",
     },
-    "deepghs_face_x": {
-        "url": "https://huggingface.co/deepghs/anime_face_detection/resolve/main/face_detect_v1.4_x/model.pt",
-        "filename": "deepghs_face_v1.4_x.pt",
-        "arch": "YOLOv8x (640px)",
+    # NOTE: deepghs publishes no x-sized face/person checkpoints — the
+    # largest existing variants are face_detect_v1.4_s and
+    # person_detect_v1.2_s (verified via the HF repo trees on 2026-11-06;
+    # the plan's *_x URLs return 404).
+    "deepghs_face_s": {
+        "url": "https://huggingface.co/deepghs/anime_face_detection/resolve/main/face_detect_v1.4_s/model.pt",
+        "filename": "deepghs_face_v1.4_s.pt",
+        "arch": "YOLOv8s (640px)",
         "target": "face",
         "type": "ultralytics",
         "default_imgsz": "640",
     },
-    "deepghs_person_x": {
-        "url": "https://huggingface.co/deepghs/anime_person_detection/resolve/main/person_detect_v1.2_x/model.pt",
-        "filename": "deepghs_person_v1.2_x.pt",
-        "arch": "YOLOv8x (640px)",
+    "deepghs_person_s": {
+        "url": "https://huggingface.co/deepghs/anime_person_detection/resolve/main/person_detect_v1.2_s/model.pt",
+        "filename": "deepghs_person_v1.2_s.pt",
+        "arch": "YOLOv8s (640px)",
         "target": "body",
         "type": "ultralytics",
         "default_imgsz": "640",

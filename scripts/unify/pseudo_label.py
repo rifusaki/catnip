@@ -552,12 +552,12 @@ def enrich_anime_image(
     lines, classes = read_staging_label(label_path)
     gt_heads = classes.get(CLASS_HEAD, [])
 
-    deepghs_faces = run_teachers(image_path, "deepghs_face_x", "face", CONF_FACE_TEACHER, device)
+    deepghs_faces = run_teachers(image_path, "deepghs_face_s", "face", CONF_FACE_TEACHER, device)
     zymk9_faces = run_teachers(image_path, "zymk9_face", "face", CONF_FACE_TEACHER, device)
     fused_faces = weighted_box_fusion(list(deepghs_faces) + list(zymk9_faces))
     accepted_faces = verify_anime_faces(fused_faces, gt_heads, adapter)
 
-    teacher_bodies = run_teachers(image_path, "deepghs_person_x", "body", CONF_BODY_TEACHER, device)
+    teacher_bodies = run_teachers(image_path, "deepghs_person_s", "body", CONF_BODY_TEACHER, device)
     accepted_bodies = verify_anime_bodies(teacher_bodies, gt_heads)
 
     synthetic_lines = [format_yolo_line(CLASS_FACE, face) for face in accepted_faces]
@@ -615,7 +615,7 @@ def calibrate_face_adapter(
 ) -> dict:
     """Fit the face box convention adapter on GT-face-bearing manga sources.
 
-    Plan task 3.2: run the face teachers (deepghs_face_x WBF-fused with
+    Plan task 3.2: run the face teachers (deepghs_face_s WBF-fused with
     zymk9_face, conf >= 0.45) over the izutsumi and manga109 staging dirs,
     pair each prediction with its ground-truth tight face PER IMAGE at
     IoU >= *match_iou* (pool matching across images would scramble pairs),
@@ -662,7 +662,7 @@ def calibrate_face_adapter(
             if not gt_faces:
                 continue
             deepghs_faces = run_teachers(
-                record.image_path, "deepghs_face_x", "face", CONF_FACE_TEACHER, device
+                record.image_path, "deepghs_face_s", "face", CONF_FACE_TEACHER, device
             )
             zymk9_faces = run_teachers(
                 record.image_path, "zymk9_face", "face", CONF_FACE_TEACHER, device

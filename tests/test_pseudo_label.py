@@ -331,7 +331,7 @@ MANGA109_TEACHERS = {
 
 
 ANIME_TEACHERS = {
-    "deepghs_face_x": {
+    "deepghs_face_s": {
         # face predictions sit strictly inside the GT head (0.40-0.60),
         # cxcywh (0.5, 0.5, 0.12, 0.12):
         #   adapter(0.02, -0.04, 0.8, 0.75) -> (0.5024, 0.4952, 0.096, 0.09)
@@ -341,7 +341,7 @@ ANIME_TEACHERS = {
         "art_006.jpg": [det(0.44, 0.44, 0.56, 0.56, score=0.9)],
     },
     "zymk9_face": {},
-    "deepghs_person_x": {
+    "deepghs_person_s": {
         "art_001.jpg": [det(0.20, 0.10, 0.80, 0.90, score=0.70)],
     },
 }
@@ -712,7 +712,7 @@ def test_calibrate_fits_and_serializes_face_box_adapter(tmp_path, monkeypatch) -
             izutsumi_preds.get(image_path.name, [])
             if image_path.name.startswith("izupage")
             else manga109_preds.get(image_path.name, [])
-            if model_key == "deepghs_face_x"
+            if model_key == "deepghs_face_s"
             else []
         ),
     )
@@ -747,9 +747,9 @@ def test_calibrate_dry_run_writes_nothing(tmp_path, monkeypatch, capsys) -> None
         "run_teachers",
         lambda image_path, model_key, target, conf, device="cpu", custom_path=None:
             [det(0.412, 0.394, 0.572, 0.594, score=0.9)]
-            if image_path.name.startswith("izupage") and model_key == "deepghs_face_x"
+            if image_path.name.startswith("izupage") and model_key == "deepghs_face_s"
             else [det(0.376667, 0.383750, 0.510000, 0.508750, score=0.9)]
-            if model_key == "deepghs_face_x"
+            if model_key == "deepghs_face_s"
             else [],
     )
 
@@ -791,9 +791,9 @@ def test_calibrate_validates_both_sources_and_reserves_fit_per_source(
         "run_teachers",
         lambda image_path, model_key, target, conf, device="cpu", custom_path=None:
             [det(0.412, 0.394, 0.572, 0.594, score=0.9)]
-            if image_path.name.startswith("izupage") and model_key == "deepghs_face_x"
+            if image_path.name.startswith("izupage") and model_key == "deepghs_face_s"
             else [det(0.376667, 0.383750, 0.510000, 0.508750, score=0.9)]
-            if model_key == "deepghs_face_x"
+            if model_key == "deepghs_face_s"
             else [],
     )
 
