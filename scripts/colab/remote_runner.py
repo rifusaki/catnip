@@ -150,8 +150,39 @@ if not dataset_yaml.exists():
     assert free_gb >= 35.0, f"Insufficient disk: {free_gb:.1f} GB < 35 GB required."
 
     tar_path = Path("/content/stage1_sliced.tar")
-    print(f"[RemoteRunner] Downloading dataset archive from R2: {STAGE1_DATASET_KEY}...")
-    s3.download_file(BUCKET, STAGE1_DATASET_KEY, str(tar_path))
+    try:
+        s3.head_object(Bucket=BUCKET, Key=STAGE1_DATASET_KEY)
+        archive_present = True
+    except Exception:
+        archive_present = False
+
+    if archive_present:
+        print(f"[RemoteRunner] Downloading dataset archive from R2: {STAGE1_DATASET_KEY}...")
+        s3.download_file(BUCKET, STAGE1_DATASET_KEY, str(tar_path))
+    else:
+        # >5 GB archives cannot be stored as one R2 object (single-PUT cap);
+        # the upload side splits them into ordered .part_* chunks. Rebuild.
+        part_prefix = STAGE1_DATASET_KEY + ".part_"
+        listing = s3.list_objects_v2(Bucket=BUCKET, Prefix=part_prefix)
+        part_keys = sorted(obj["Key"] for obj in listing.get("Contents", []))
+        if not part_keys:
+            raise FileNotFoundError(
+                f"Neither '{STAGE1_DATASET_KEY}' nor split parts '{part_prefix}*' "
+                f"exist in bucket '{BUCKET}'."
+            )
+        print(f"[RemoteRunner] Archive stored as {len(part_keys)} split part(s); reconstructing...")
+        part_paths = []
+        for part_key in part_keys:
+            part_local = Path("/content") / Path(part_key).name
+            print(f"[RemoteRunner] Downloading {part_key}...")
+            s3.download_file(BUCKET, part_key, str(part_local))
+            part_paths.append(part_local)
+        with open(tar_path, "wb") as out:
+            for part in part_paths:
+                with open(part, "rb") as chunk:
+                    shutil.copyfileobj(chunk, out)
+                part.unlink()
+        print(f"[RemoteRunner] Reconstructed {tar_path} ({tar_path.stat().st_size/1e9:.1f} GB).")
 
     print("[RemoteRunner] Extracting dataset to local NVMe...")
     os.system(f"tar -xf {tar_path} -C {LOCAL_DATA_ROOT}")
