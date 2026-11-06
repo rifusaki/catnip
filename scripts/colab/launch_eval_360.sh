@@ -105,6 +105,18 @@ os.environ["CATNIP_EVAL_SAMPLE"] = "${CATNIP_EVAL_SAMPLE:-0}"
 os.environ["CATNIP_EVAL_DEVICE"] = "${CATNIP_EVAL_DEVICE:-cuda}"
 EOF
 
+# Forward the v2 benchmark knobs when set here (defaults keep the classic
+# v1 flow: the fixed harness re-benchmarks the v1 deliverable into the
+# canonical results/benchmarks prefix — task 2.1).
+for _knob in \
+    CATNIP_REPO_BRANCH \
+    CATNIP_EVAL_MODEL_KEY \
+    CATNIP_EVAL_RESULTS_PREFIX; do
+    if [[ -n "${!_knob:-}" ]]; then
+        printf 'os.environ["%s"] = "%s"\n' "$_knob" "${!_knob}" >> "$PAYLOAD_FILE"
+    fi
+done
+
 cat "${SCRIPT_DIR}/remote_eval_runner.py" >> "$PAYLOAD_FILE"
 
 echo "[4/4] Starting evaluation stream on Colab VM..."
@@ -113,6 +125,9 @@ echo "  TIP: If running in tmux, press 'Ctrl+B' then 'D' to detach."
 echo "  Reattach anytime with: tmux attach -t catnip-eval"
 echo "  Overrides: CATNIP_EVAL_SAMPLE (0 = full split), CATNIP_EVAL_DEVICE,"
 echo "             CATNIP_EVAL_TIMEOUT_SECONDS (default 21600)."
+echo "  v2 (task 4.3): CATNIP_EVAL_MODEL_KEY=models/yolo26m_stage1_v2.pt and"
+echo "             CATNIP_EVAL_RESULTS_PREFIX=results/benchmarks_v2 keep the"
+echo "             canonical v1 results intact; CATNIP_REPO_BRANCH (default main)."
 echo "----------------------------------------------------------"
 
 "$COLAB_BIN" exec -s "$SESSION_NAME" --timeout "$EVAL_TIMEOUT_SECONDS" -f "$PAYLOAD_FILE"

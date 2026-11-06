@@ -23,10 +23,18 @@ BUCKET = os.environ.get("BUCKET", "catnip-canonical")
 R2_ACCESS_KEY_ID = os.environ.get("R2_ACCESS_KEY_ID")
 R2_SECRET_ACCESS_KEY = os.environ.get("R2_SECRET_ACCESS_KEY")
 DATASET_ARCHIVE_KEY = "compressed/stage1_sliced.tar"
-TRAINED_MODEL_KEY = "models/yolo26_stage1_body_head_face.pt"
-RESULTS_PREFIX = "results/benchmarks"
 EVAL_SAMPLE = os.environ.get("CATNIP_EVAL_SAMPLE", "0")
 EVAL_DEVICE = os.environ.get("CATNIP_EVAL_DEVICE", "cuda")
+# v2 knobs (defaults keep the classic v1 benchmark flow: the fixed harness
+# re-benchmarks the v1 deliverable into the canonical results/ prefix).
+# CATNIP_EVAL_MODEL_KEY: Stage 1 checkpoint to benchmark (4.3 sets this to
+# models/yolo26m_stage1_v2.pt). CATNIP_EVAL_RESULTS_PREFIX: R2 prefix for
+# the synced artifacts. CATNIP_REPO_BRANCH: repo branch cloned on the VM.
+TRAINED_MODEL_KEY = os.environ.get(
+    "CATNIP_EVAL_MODEL_KEY", "models/yolo26_stage1_body_head_face.pt"
+)
+RESULTS_PREFIX = os.environ.get("CATNIP_EVAL_RESULTS_PREFIX", "results/benchmarks")
+REPO_BRANCH = os.environ.get("CATNIP_REPO_BRANCH", "main")
 
 if os.environ.get("CUDA_VISIBLE_DEVICES") == "cuda":
     del os.environ["CUDA_VISIBLE_DEVICES"]
@@ -83,7 +91,7 @@ os.system(f"pip install --quiet {pip_spec}")
 # refactor/reID branch does not contain it.
 REPO_URL = "https://github.com/rifusaki/catnip.git"
 REPO_DIR = Path("/content/catnip")
-BRANCH = "main"
+BRANCH = REPO_BRANCH
 
 if not REPO_DIR.exists():
     print(f"[RemoteEval] Cloning {REPO_URL} ({BRANCH})...")

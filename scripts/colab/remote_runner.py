@@ -116,7 +116,11 @@ os.system(f"pip install --quiet {pip_spec}")
 # --- 3. Clone / Update Repository ---
 REPO_URL = "https://github.com/rifusaki/catnip.git"
 REPO_DIR = Path("/content/catnip")
-BRANCH = "refactor/reID"
+# v2 lives on main (the yolo26m profile, polish mode, and the env-knob
+# profile below). The historical default was the stale refactor/reID
+# branch — pinning that silently trained pre-v2 code. Override with
+# CATNIP_REPO_BRANCH for one-off runs against another branch.
+BRANCH = os.environ.get("CATNIP_REPO_BRANCH", "main")
 
 if not REPO_DIR.exists():
     print(f"[RemoteRunner] Cloning {REPO_URL} ({BRANCH})...")

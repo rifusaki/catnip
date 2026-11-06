@@ -94,12 +94,37 @@ os.environ["R2_ACCESS_KEY_ID"] = "${R2_ACCESS_KEY_ID}"
 os.environ["R2_SECRET_ACCESS_KEY"] = "${R2_SECRET_ACCESS_KEY}"
 EOF
 
+# Forward the v2 training profile knobs when they are set on this WSL
+# host (the runner's in-code v2 defaults apply otherwise). Values are
+# ops strings (branch names, R2 keys, ints) — no quoting gymnastics.
+for _knob in \
+    CATNIP_REPO_BRANCH \
+    CATNIP_STAGE1_BASE_MODEL_KEY \
+    CATNIP_STAGE1_RUN_NAME \
+    CATNIP_STAGE1_EPOCHS \
+    CATNIP_STAGE1_BATCH \
+    CATNIP_STAGE1_DEVICE \
+    CATNIP_STAGE1_WORKERS \
+    CATNIP_STAGE1_DATASET_KEY \
+    CATNIP_STAGE1_ARTIFACT \
+    CATNIP_POLISH \
+    CATNIP_POLISH_EPOCHS; do
+    if [[ -n "${!_knob:-}" ]]; then
+        printf 'os.environ["%s"] = "%s"\n' "$_knob" "${!_knob}" >> "$PAYLOAD_FILE"
+    fi
+done
+
 cat "${SCRIPT_DIR}/remote_runner.py" >> "$PAYLOAD_FILE"
 
 echo "[4/4] Starting training stream on Colab VM..."
 echo "----------------------------------------------------------"
 echo "  TIP: If running in tmux, press 'Ctrl+B' then 'D' to detach."
 echo "  Reattach anytime with: tmux attach -t catnip-training"
+echo "  v2 profile knobs (forwarded when set): CATNIP_REPO_BRANCH (default"
+echo "  main), CATNIP_STAGE1_{BASE_MODEL_KEY,RUN_NAME,EPOCHS,BATCH,DEVICE,"
+echo "  WORKERS,DATASET_KEY,ARTIFACT}, CATNIP_POLISH, CATNIP_POLISH_EPOCHS."
+echo "  Fresh v2 runs need models/yolo26m.pt and the"
+echo "  CATNIP_STAGE1_DATASET_KEY archive present in R2."
 echo "----------------------------------------------------------"
 
 "$COLAB_BIN" exec -s "$SESSION_NAME" --timeout 86400 -f "$PAYLOAD_FILE"
