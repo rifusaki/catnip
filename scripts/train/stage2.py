@@ -566,7 +566,9 @@ def build_embedder(settings: Settings) -> CharacterEmbedder:
 # CLI entry point
 # ---------------------------------------------------------------------------
 
-def main(argv: list[str] | None = None) -> None:
+def _parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse the stage2 CLI. ``--override`` is repeatable, matching the
+    repo convention (one KEY=VALUE per flag, flags accumulate)."""
     parser = argparse.ArgumentParser(
         description="Stage 2 SupCon / Sub-Center ArcFace ReID fine-tuning.",
     )
@@ -577,11 +579,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument(
         "--override",
-        nargs="*",
+        action="append",
         default=None,
         metavar="KEY=VALUE",
-        help="Override config values using dot-path keys "
-             "(e.g. training.stage2.epochs=200).",
+        help="Override config values using dot-path keys, repeatable "
+             "(e.g. --override training.stage2.epochs=200)",
     )
     parser.add_argument(
         "--verbose",
@@ -594,8 +596,11 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Only run triplet dataset preparation (legacy data-prep path, exit 0).",
     )
+    return parser.parse_args(argv)
 
-    args = parser.parse_args(argv)
+
+def main(argv: list[str] | None = None) -> None:
+    args = _parse_cli_args(argv)
 
     # --- Setup logging ---
     _configure_logging(args.verbose)

@@ -286,3 +286,22 @@ def test_mine_pseudo_labels_fails_loud_above_dense_budget(monkeypatch) -> None:
 
     with pytest.raises(ValueError, match="dense precomputed HDBSCAN budget"):
         mine_pseudo_labels(embeddings, min_cluster_size=2)
+
+
+def test_stage2_cli_accumulates_repeated_override_flags() -> None:
+    """--override is repeatable: repeated flags must all land (the repo's
+    `catnip train stage2` and cli convention pass them one per flag)."""
+    from scripts.train import stage2 as stage2_module
+
+    args = stage2_module._parse_cli_args(
+        [
+            "--override", "training.stage2.epochs=3",
+            "--override", "training.stage2.device=cpu",
+            "--override", "training.stage2.batch_size=4",
+        ]
+    )
+    assert args.override == [
+        "training.stage2.epochs=3",
+        "training.stage2.device=cpu",
+        "training.stage2.batch_size=4",
+    ]
