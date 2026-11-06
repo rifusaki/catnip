@@ -468,12 +468,31 @@ def run_teachers(
     This is the single I/O + inference seam of the pipeline: everything else
     in this module is pure geometry and file orchestration, so tests craft
     teacher outputs by monkeypatching this function.
+
+    Detectors are cached per (model_key, target, device, custom_path):
+    constructing a teacher loads weights (and for the legacy YOLOv5s, the
+    torch.hub repo) — doing that PER IMAGE made the 2,075-page calibration
+    pass spend minutes per page just reloading. Model state is read-only
+    after load, so reuse across images is safe.
     """
     image = cv2.imread(str(image_path))
     if image is None:
         raise RuntimeError(f"Cannot read staging image for teacher inference: {image_path}")
-    detector = get_detector(model_key, target=target, custom_path=custom_path, device=device)
+    detector = _get_teacher_detector(model_key, target, device, custom_path)
     return detector.predict(image, conf=conf)
+
+
+_TEACHER_CACHE: dict[tuple[str, str, str, str | None], object] = {}
+
+
+def _get_teacher_detector(model_key: str, target: str, device: str, custom_path: Path | None):
+    """Load a teacher once per (key, target, device, path); reuse on hit."""
+    cache_key = (model_key, target, device, str(custom_path) if custom_path is not None else None)
+    detector = _TEACHER_CACHE.get(cache_key)
+    if detector is None:
+        detector = get_detector(model_key, target=target, custom_path=custom_path, device=device)
+        _TEACHER_CACHE[cache_key] = detector
+    return detector
 
 
 # ========================================================================

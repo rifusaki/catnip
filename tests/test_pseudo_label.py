@@ -832,3 +832,32 @@ def test_calibrate_manga109_sample_is_strided_not_head_capped(tmp_path, monkeypa
     assert [record.image_name for record in sampled] == [
         "page_001.jpg", "page_006.jpg", "page_011.jpg", "page_016.jpg",
     ]
+
+
+def test_teacher_cache_reuses_constructed_detectors(monkeypatch) -> None:
+    """Teachers load once per (key, target, device, path): constructing
+    weights per image made the 2,075-page calibration pass spend minutes
+    per page reloading. The fake detector here counts constructions."""
+    calls = []
+
+    class CountingDetector:
+        def __init__(self):
+            calls.append(1)
+
+        def predict(self, image, conf=0.3):
+            return []
+
+    monkeypatch.setattr(
+        pseudo_label,
+        "get_detector",
+        lambda model_key, target, custom_path=None, device="cpu": CountingDetector(),
+    )
+    monkeypatch.setattr(pseudo_label, "_TEACHER_CACHE", {})
+
+    for _ in range(3):
+        pseudo_label._get_teacher_detector("deepghs_face_s", "face", "mps", None)
+    pseudo_label._get_teacher_detector("deepghs_face_s", "face", "cpu", None)
+    pseudo_label._get_teacher_detector("deepghs_face_s", "face", "mps", Path("x.pt"))
+
+    # one construction per distinct key (device/path differ), zero on cache hit
+    assert len(calls) == 3
