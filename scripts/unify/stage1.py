@@ -14,6 +14,7 @@ Usage::
     python scripts/unify/stage1.py --output-dir /custom/path
     python scripts/unify/stage1.py --seed 42 --verbose
     python scripts/unify/stage1.py --slice --slice-workers 4
+    python scripts/unify/stage1.py --staging-dir-names manga109,ah_yolo
 
 Paths are resolved from config/pipeline.yaml. Set CATNIP_DATA env var to
 relocate the entire catnip-data tree (e.g. to an external SSD).
@@ -41,12 +42,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 from src.config import settings
 
-STAGING_DIRS: list[Path] = [
-    settings.paths.data / "data" / "staging" / name
-    for name in ("izutsumi", "manga109", "ah_yolo", "ah_coco")
-]
-
 DEFAULT_OUTPUT = settings.paths.unified_dir
+
+# Comma-separated staging source names to unify (resolved under
+# <data>/data/staging/). Kept as a CLI-overridable string so enriched trees
+# (e.g. pseudo_label.py output) can replace the standard staging names.
+DEFAULT_STAGING_DIR_NAMES = "izutsumi,manga109,ah_yolo,ah_coco"
 
 CLASS_NAMES: dict[int, str] = {0: "body", 1: "head", 2: "face"}
 IMAGE_EXTS: frozenset[str] = frozenset({".jpg", ".jpeg", ".png", ".webp", ".bmp"})
@@ -92,6 +93,11 @@ def parse_args() -> argparse.Namespace:
         help="Number of parallel processes for slicing (default: 1 = serial).",
     )
     parser.add_argument(
+        "--staging-dir-names", default=DEFAULT_STAGING_DIR_NAMES,
+        help="Comma-separated staging source names to unify, resolved under "
+             "<data>/data/staging/ (default: izutsumi,manga109,ah_yolo,ah_coco).",
+    )
+    parser.add_argument(
         "--verbose", action="store_true",
         help="Enable debug-level logging.",
     )
@@ -101,6 +107,8 @@ def parse_args() -> argparse.Namespace:
         parser.error(f"--split must sum to 100, got {args.split} (sum={sum(args.split)})")
     if any(r <= 0 for r in args.split):
         parser.error("All --split ratios must be positive integers")
+    if not [n for n in args.staging_dir_names.split(",") if n.strip()]:
+        parser.error("--staging-dir-names must contain at least one name")
 
     return args
 
@@ -384,7 +392,12 @@ def main() -> None:
 
     # Phase 1 — Collect pairs
     logger.info("Collecting image-label pairs from staging directories …")
-    all_pairs, class_dist_by_source, duplicates_excluded = collect_pairs(STAGING_DIRS)
+    staging_dirs = [
+        settings.paths.data / "data" / "staging" / name.strip()
+        for name in args.staging_dir_names.split(",")
+        if name.strip()
+    ]
+    all_pairs, class_dist_by_source, duplicates_excluded = collect_pairs(staging_dirs)
     if not all_pairs:
         logger.error("No pairs found in any staging directory. Run conversion scripts first.")
         sys.exit(1)

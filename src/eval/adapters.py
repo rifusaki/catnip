@@ -52,6 +52,30 @@ BENCHMARK_CATALOG: dict[str, dict[str, str]] = {
         "type": "ultralytics",
         "default_imgsz": "640",
     },
+    "deepghs_head_x": {
+        "url": "https://huggingface.co/deepghs/anime_head_detection/resolve/main/head_detect_v2.0_x_yv11/model.pt",
+        "filename": "deepghs_head_v2.0_x_yv11.pt",
+        "arch": "YOLO11x (640px)",
+        "target": "head",
+        "type": "ultralytics",
+        "default_imgsz": "640",
+    },
+    "deepghs_face_x": {
+        "url": "https://huggingface.co/deepghs/anime_face_detection/resolve/main/face_detect_v1.4_x/model.pt",
+        "filename": "deepghs_face_v1.4_x.pt",
+        "arch": "YOLOv8x (640px)",
+        "target": "face",
+        "type": "ultralytics",
+        "default_imgsz": "640",
+    },
+    "deepghs_person_x": {
+        "url": "https://huggingface.co/deepghs/anime_person_detection/resolve/main/person_detect_v1.2_x/model.pt",
+        "filename": "deepghs_person_v1.2_x.pt",
+        "arch": "YOLOv8x (640px)",
+        "target": "body",
+        "type": "ultralytics",
+        "default_imgsz": "640",
+    },
 }
 
 

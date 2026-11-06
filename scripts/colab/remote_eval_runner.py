@@ -73,7 +73,10 @@ packages = [
     "scikit-learn>=1.7,<2",
     "manga109api>=0.3.1,<0.4",
 ]
-os.system(f"pip install --quiet {' '.join(f'\"{p}\"' for p in packages)}")
+# NOTE: quoted with a pre-joined string — nested escaped quotes inside one
+# f-string are Python 3.12-only syntax and this repo pins python 3.11.
+pip_spec = " ".join(f'"{p}"' for p in packages)
+os.system(f"pip install --quiet {pip_spec}")
 
 # --- 3. Clone / Update Repository ---
 # The benchmark suite (scripts/eval/, src/eval/) lives on main; the older

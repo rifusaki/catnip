@@ -72,22 +72,72 @@ class SahiParams(BaseModel):
     overlap_ratio: float
     confidence_threshold: float
     min_area_ratio: float
+    # Post-slicing fusion: WBF fuses overlapping slice predictions by
+    # confidence-weighted box averaging (NMM keeps the largest box).
+    postprocess_type: str = "WBF"
+    postprocess_match_metric: str = "IOS"
+    postprocess_match_threshold: float = 0.40
+    # Dynamic panel/page gating (see SAHIExtractor.extract_from_image):
+    # images with max(H, W) <= panel_max_dim skip SAHI and run a single
+    # letterboxed 640px inference pass.
+    panel_max_dim: int = 800
+    # Full pages are normalized so the longer side equals this before
+    # slicing, then predictions are projected back to original pixel space.
+    canonical_page_max_dim: int = 1800
+    # Hierarchical anatomy filter: low-confidence face boxes are kept only
+    # when contained (IoS >= 0.75) inside a detected head or body box.
+    hierarchical_verify: bool = True
+    # Per-class calibrated confidence thresholds applied after fusion.
+    class_conf_thresholds: dict[str, float] = {
+        "body": 0.52,
+        "head": 0.52,
+        "face": 0.56,
+    }
 
 
-class MetricLearningParams(BaseModel):
-    img_size: int
-    batch_size: int
-    margin: float
-    learning_rate: float
-    epochs: int
-    faiss_index_path: str
-    embeddings_model_path: str
+class ReidParams(BaseModel):
+    """Stage 2 character embedding settings (multi-prototype clustering)."""
+
+    # Backbone registry key resolved by src/reid/model.py:
+    # "convnext_small" (torchvision, default), "dinov2_vits14" (torch.hub),
+    # "ccip" (deepghs, optional dependency).
+    backbone: str = "convnext_small"
+    embedding_dim: int = 256
+    # Generalized Mean pooling exponent (3.0 = power mean, learnable).
+    gem_p: float = 3.0
+    img_size: int = 224
+    # Confidence-weighted part fusion weights ({face, head, body}).
+    # Renormalized over present parts at inference time.
+    part_weights: dict[str, float] = {"face": 0.35, "head": 0.50, "body": 0.15}
+    # FAISS index artifact (IndexFlatIP over L2-normalized embeddings).
+    index_path: str = "reid_index.faiss"
+
+
+class ClusteringParams(BaseModel):
+    """Semi-supervised multi-prototype clustering and decision thresholds."""
+
+    # k-NN graph edges per instance for HDBSCAN density estimation.
+    k_neighbors: int = 25
+    # HDBSCAN minimum sub-cluster membership.
+    min_cluster_size: int = 5
+    # Tier 1 auto-tag threshold (target precision >= 98%).
+    tau_core: float = 0.82
+    # Tier 2 boundary band lower edge: [tau_boundary, tau_core) instances
+    # are grouped into review sub-clusters instead of auto-tagged.
+    tau_boundary: float = 0.68
+    # Same-Page Prior Boost added to partial/back instances in adjacent
+    # panels of a page that already contains a core Izutsumi detection.
+    page_prior_boost: float = 0.06
+    # Two spatially distinct instances with IoU below this are considered
+    # distinct characters for Same-Panel Cannot-Link.
+    panel_instance_iou: float = 0.15
 
 
 class Params(BaseModel):
     device: str
     sahi: SahiParams
-    metric_learning: MetricLearningParams
+    reid: ReidParams
+    clustering: ClusteringParams
 
 
 class SubsetSourceParams(BaseModel):
@@ -118,6 +168,11 @@ class Stage1TrainingParams(BaseModel):
     use_subset: bool
     deterministic: bool
     subset: Stage1SubsetParams
+    # Optional run/artifact naming: when empty, stage1.py derives the
+    # historical defaults ("stage1"/"stage1_m3" run dirs and target names).
+    # Non-empty names keep v2 runs (yolo26m) from clobbering v1 artifacts.
+    run_name: str = ""
+    target_model_name: str = ""
     close_mosaic: int = 10
     weight_decay: float = 0.0005
     cls_pw: float = 0.0
@@ -127,20 +182,30 @@ class Stage1TrainingParams(BaseModel):
     hsv_s: float = 0.7
     hsv_v: float = 0.4
     degrees: float = 0.0
+    # Color-to-line-art bridge: probability of RandomGrayscale on
+    # training batches (0 disables; Stage 1 v2 uses 0.25).
+    random_grayscale: float = 0.0
+    mixup: float = 0.0
     plots: bool = True
     save_period: int = -1
 
 
 class Stage2TrainingParams(BaseModel):
+    """SupCon / Sub-Center ArcFace training (semi-supervised clustering)."""
+
     model: str
+    backbone: str = "convnext_small"
+    embedding_dim: int = 256
     batch_size: int
     epochs: int
     learning_rate: float
     patience: int
     device: str
-    margin: float
-    p: int
-    k: int
+    # Supervised Contrastive Loss temperature (tau).
+    temperature: float = 0.07
+    # Sub-Center ArcFace sub-centers per class (Izutsumi visual modes).
+    num_subcenters: int = 5
+    image_size: int = 224
 
 
 class Training(BaseModel):

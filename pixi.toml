@@ -111,9 +111,24 @@ train-stage2 = "python scripts/train/stage2.py"
 
 # --- M3-local experiment: stratified subset + overnight MPS training ---
 # 1. subset-stage1  — build stage1_sliced_subset (symlinks, ~15 min dataset)
-# 2. train-stage1-m3 — run stage1 on the subset with MPS (epochs/patience from config/pipeline.yaml)
+# 2. train-stage1-m3 — run stage1 on the subset with MPS (full v1 profile pinned below)
 subset-stage1 = "python scripts/train/subset_stage1.py"
-train-stage1-m3 = "python scripts/train/stage1.py --override training.stage1.device=mps --override training.stage1.use_subset=true --override training.stage1.batch=8"
+# Keep the v1 nano profile on the 16 GB MacBook, completely pinned:
+# config/pipeline.yaml now targets yolo26m @ L4 (v2), so every knob the v1
+# M3 run depends on is pinned here — not just the model. Missing pins are
+# how the chain BREAKS: m3_chain.sh hardcodes EPOCHS=26 and compares it
+# against the checkpoint's train_args.epochs (an epochs=75 checkpoint
+# aborts the chain on the next loop iteration), and the v2 augmentation
+# (random_grayscale 0.25, HSV 0.015/0.5/0.4, mixup 0.10) plus 8 workers
+# would overwhelm the 16 GB Air. CLI override strings are NOT
+# yaml-interpolated, so the model pin is a literal path (CATNIP_DATA
+# fallback = /Volumes/rifuSSD/catnip-data; update this path if the data
+# root moves). The empty run_name/target_model_name pins restore the
+# historical "stage1_m3"/"yolo26_stage1_body_head_face_m3.pt" names that
+# m3_chain.sh depends on (its RUN_DIR and checkpoint loop are hardcoded
+# to them). tests/test_stage1_training.py parses this task line and
+# asserts the full v1 pin set stays present.
+train-stage1-m3 = "python scripts/train/stage1.py --override training.stage1.device=mps --override training.stage1.use_subset=true --override training.stage1.batch=8 --override training.stage1.workers=4 --override training.stage1.epochs=26 --override training.stage1.patience=12 --override training.stage1.close_mosaic=6 --override training.stage1.cls_pw=0.6 --override training.stage1.hsv_h=0 --override training.stage1.hsv_s=0 --override training.stage1.hsv_v=0.3 --override training.stage1.mixup=0 --override training.stage1.random_grayscale=0 --override training.stage1.model=/Volumes/rifuSSD/catnip-data/models/yolo26n.pt --override training.stage1.run_name= --override training.stage1.target_model_name="
 # Leak-safe chained run: one epoch per process via resume (see m3_chain.sh).
 train-stage1-m3-chain = "bash scripts/train/m3_chain.sh"
 

@@ -72,50 +72,99 @@ params:
     # of the original. Used by training-side pre-slicing AND must match
     # any future label-shrinking at inference. 0.3 = keep if ≥30% remains.
     min_area_ratio: 0.3
-  metric_learning:
+    # Post-slicing fusion: "WBF" (weighted box fusion) or "NMM".
+    postprocess_type: "WBF"
+    postprocess_match_metric: "IOS"
+    postprocess_match_threshold: 0.40
+    # Dynamic panel/page gate: max(H, W) <= 800px runs single-pass 640px
+    # letterboxed inference; larger pages are SAHI-sliced.
+    panel_max_dim: 800
+    # Full pages are normalized so the longer side equals 1800px before
+    # slicing (scale parity across tankobon rips / magazine scans / webrips).
+    canonical_page_max_dim: 1800
+    # Keep a face only when contained in head/body detections (IoS >= 0.75);
+    # face conf >= 0.70 is unconditionally retained (extreme close-ups).
+    hierarchical_verify: true
+    # Per-class calibrated confidence thresholds applied after fusion.
+    # NOTE: with hierarchical_verify=true (default) faces are governed by
+    # the hierarchy band [0.45, 0.70)+containment instead — the face entry
+    # applies only when hierarchical_verify is disabled.
+    class_conf_thresholds:
+      body: 0.52
+      head: 0.52
+      face: 0.56
+  reid:
+    backbone: convnext_small
+    embedding_dim: 256
+    gem_p: 3.0
     img_size: 224
-    batch_size: 32
-    margin: 0.5
-    learning_rate: 0.0003
-    epochs: 100
-    faiss_index_path: index.faiss
-    embeddings_model_path: reid_resnet18.pth
+    # Confidence-weighted multi-granularity fusion (renormalized over
+    # present parts: face-only crops or body-only crops still embed).
+    part_weights:
+      face: 0.35
+      head: 0.50
+      body: 0.15
+    index_path: reid_index.faiss
+  clustering:
+    k_neighbors: 25
+    min_cluster_size: 5
+    tau_core: 0.82
+    tau_boundary: 0.68
+    page_prior_boost: 0.06
+    panel_instance_iou: 0.15
 
 training:
   stage1:
-    model: ${paths.model_dir}/yolo26n.pt
+    # Stage 1 v2 primary profile (Colab Pro L4, 24 GB VRAM): yolo26m.
+    # The v1 nano deliverable remains trainable locally — the pixi task
+    # `train-stage1-m3` pins this field back to yolo26n.pt with a literal
+    # path override, so the L4 value never reaches the 16 GB MacBook.
+    model: ${paths.model_dir}/yolo26m.pt
     # imgsz MUST match params.sahi.slice_height × params.sahi.slice_width
     # because the training data is pre-sliced at those dimensions
     # (scripts/unify/stage1.py --slice). Do not change one without the other.
     imgsz: 640
-    # 26 epochs (calibrated for ~12h run at 26.25 min/cycle sustained on M3 Air)
-    epochs: 26
-    patience: 12
-    batch: 8
-    workers: 4  # dataloader workers (T4: 2-4, M3: 4, A100: 8-16)
-    device: mps
+    epochs: 75            # v2 budget on L4 (~6-7.5 min/epoch, mosaic-heavy)
+    patience: 15
+    batch: 48             # ~15.5 GB VRAM on L4 (24 GB); OOM ladder 32->16->8->4->2
+    workers: 8  # dataloader workers (L4: 8, M3: 4, T4: 2-4)
+    device: cuda    # primary v2 training on Colab L4; m3 pixi task pins mps
     freeze: 0   # unfreeze backbone for manga line-art domain adaptation
     mosaic: 0.5
-    close_mosaic: 6  # disable mosaic for final 6 epochs to refine box regression
+    close_mosaic: 12  # disable mosaic for final 12 epochs to refine box regression
     lr0: 0.001
     cos_lr: true
-    weight_decay: 0.002  # regularize unfreezing on 5.2k slices
-    cls_pw: 0.6          # BCE loss weighting to lift minority head recall
+    weight_decay: 0.002
+    cls_pw: 1.0           # restored from 0.6: pseudo-labeling completes all 3 classes
     box: 8.5             # strengthen box regression CIoU gain
     dfl: 2.0             # strengthen distribution focal loss gain
-    hsv_h: 0.0           # monochrome manga: disable hue jitter
-    hsv_s: 0.0           # monochrome manga: disable saturation jitter
-    hsv_v: 0.3           # preserve exposure/value jitter
+    # Color-to-line-art bridging (docs/implementation_plan.md §4) forces
+    # shared contour features across B&W manga and colored AnimeHeads art.
+    hsv_h: 0.015  # re-enable hue jitter for colored fanart
+    hsv_s: 0.5    # re-enable saturation jitter for colored fanart
+    hsv_v: 0.4
     degrees: 2.0         # handle scan tilt
-    plots: false         # reduce epoch-end peak RAM and save ~10 min wall clock
+    mixup: 0.10           # passed to model.train() by stage1.py when > 0
+    # RandomGrayscale injected into the ultralytics train-time Compose by
+    # stage1.py (3-channel gray + brightness/contrast jitter). 0 disables.
+    random_grayscale: 0.25
+    plots: false         # reduce epoch-end peak RAM and save wall clock
     save_period: 3       # save periodic checkpoints for post-run re-ranking
     # Explicit optimizer for CUDA paths (Colab/Lightning/Vast/RunPod).
     # `auto` ignores manual lr0; explicit MuSGD makes lr0 effective.
     # stage1.py forces AdamW on MPS (MuSGD bf16 type-cast issues).
     optimizer: MuSGD
+    # v2 run/artifact names keep yolo26m deliverables separate from the v1
+    # nano weights runs. Empty strings restore historical naming; the m3 pixi
+    # task overrides these to empty so the M3 chain keeps writing to
+    # runs/detect/stage1_m3. Golden polish (stage1.py --polish) appends
+    # "_polish" to run_name and reuses target_model_name.
+    run_name: "stage1_v2"
+    target_model_name: "yolo26m_stage1_v2.pt"
     # Train on the stratified subset built by `pixi run subset-stage1`
     # (scripts/train/subset_stage1.py) instead of the full sliced dataset.
-    # M3-local experiment profile; production (CUDA/Kaggle) keeps false.
+    # M3-local experiment profile (the m3 pixi task sets use_subset=true);
+    # production training keeps false.
     use_subset: false
     # Deterministic mode routes torch through use_deterministic_algorithms.
     # Plumbed for experiments: deterministic=True/False were both leak-tested
@@ -145,12 +194,14 @@ training:
         ah_yolo: {fraction: 0.05, max_per_image: 1}
         ah_coco: {fraction: 0.08, max_per_image: 1}
   stage2:
-    model: reid_resnet18.pth
+    model: reid_stage2_v2.pt
+    backbone: convnext_small
+    embedding_dim: 256
     batch_size: 32
     epochs: 100
     learning_rate: 0.0003
     patience: 20
     device: mps
-    margin: 0.5
-    p: 8
-    k: 4
+    temperature: 0.07    # SupConLoss tau
+    num_subcenters: 5     # Sub-Center ArcFace sub-centers per class
+    image_size: 224
