@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Catnip Stage 1 v2 Ground Truth Gallery</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #111827;
+      --border: #1f293d;
+      --text: #f3f4f6;
+      --text-muted: #9ca3af;
+      --cyan: #00e5ff;
+      --amber: #ff9100;
+      --emerald: #00e676;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 32px 24px;
+      line-height: 1.5;
+    }
+    header {
+      max-width: 1400px;
+      margin: 0 auto 32px auto;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 24px;
+    }
+    h1 {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: linear-gradient(135deg, #fff 40%, var(--cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    p.subtitle {
+      color: var(--text-muted);
+      margin-top: 8px;
+      font-size: 15px;
+      max-width: 900px;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-top: 20px;
+      align-items: center;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.04);
+      padding: 6px 12px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+    }
+    .legend-color {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+    .filter-bar {
+      max-width: 1400px;
+      margin: 0 auto 28px auto;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .filter-btn {
+      background: #162032;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .filter-btn:hover, .filter-btn.active {
+      background: var(--cyan);
+      color: #050b14;
+      border-color: var(--cyan);
+      box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
+    }
+    .gallery-grid {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 24px;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(0, 229, 255, 0.5);
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+    }
+    .card-header {
+      padding: 12px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.02);
+      border-bottom: 1px solid var(--border);
+    }
+    .badge {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+    }
+    .badge-dataset {
+      background: rgba(168, 85, 247, 0.2);
+      color: #c084fc;
+      border: 1px solid rgba(168, 85, 247, 0.4);
+    }
+    .badge-type {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-muted);
+    }
+    .img-container {
+      width: 100%;
+      height: 320px;
+      background: #000;
+      position: relative;
+      overflow: hidden;
+      cursor: zoom-in;
+    }
+    .img-container img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      transition: transform 0.3s ease;
+    }
+    .img-container:hover img {
+      transform: scale(1.05);
+    }
+    .card-body {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex-grow: 1;
+    }
+    .card-title {
+      font-size: 13px;
+      font-weight: 700;
+      font-family: ui-monospace, Menlo, Consolas, monospace;
+      color: #e2e8f0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .card-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .metric-pill {
+      font-size: 11px;
+      padding: 5px 8px;
+      border-radius: 6px;
+      text-align: center;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+    }
+    .pill-body strong { color: var(--cyan); }
+    .pill-head strong { color: var(--amber); }
+    .pill-face strong { color: var(--emerald); }
+    .provenance-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      font-weight: 700;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+    }
+    .tag-new { color: #38bdf8; }
+    .tag-gt { color: #a3e635; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Catnip Stage 1 v2 — Ground Truth Enrichment Gallery</h1>
+    <p class="subtitle">
+      Multi-class Ground Truth annotations used to train the Stage 1 v2 <code>yolo26m</code> detector.
+      Demonstrates cross-dataset synthetic enrichment resolving the partial-label contradiction: 
+      <code>manga109</code> (synthesized heads), <code>AnimeHeads</code> (synthesized bodies + calibrated faces), and <code>Izutsumi</code> (clean passthrough).
+    </p>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-color" style="background: var(--cyan);"></div> Body (Class 0)</div>
+      <div class="legend-item"><div class="legend-color" style="background: var(--amber);"></div> Head (Class 1)</div>
+      <div class="legend-item"><div class="legend-color" style="background: var(--emerald);"></div> Face (Class 2)</div>
+      <div class="legend-item" style="border-color: #38bdf8; color: #38bdf8;">★ [NEW] Cross-Dataset Synthetic GT</div>
+      <div class="legend-item" style="border-color: #a3e635; color: #a3e635;">✓ [GT] Original Ground Truth</div>
+    </div>
+  </header>
+
+  <div class="filter-bar">
+    <button class="filter-btn active" onclick="filterGallery('all')">All Samples (20)</button>
+    <button class="filter-btn" onclick="filterGallery('manga109')">Manga109</button>
+    <button class="filter-btn" onclick="filterGallery('ah_yolo')">AnimeHeads YOLO</button>
+    <button class="filter-btn" onclick="filterGallery('ah_coco')">AnimeHeads COCO</button>
+    <button class="filter-btn" onclick="filterGallery('izutsumi')">Izutsumi</button>
+  </div>
+
+  <div class="gallery-grid" id="galleryGrid">
+    
+        <div class="card" data-dataset="manga109" data-type="slice">
+          <div class="card-header">
+            <span class="badge badge-dataset">Manga109</span>
+            <span class="badge badge-type">640×640 Slice</span>
+          </div>
+          <div class="img-container">
+            <img src="images/sample_00_manga109_manga109_UchuKigekiM774_039_512_0_1152_640.jpg" alt="manga109_UchuKigekiM774_039_512_0_1152_640.jpg" loading="lazy" />
+          </div>
+          <div class="card-body">
+            <div class="card-title" title="manga109_UchuKigekiM774_039_512_0_1152_640.jpg">manga109_UchuKigekiM774_039_512_0_1152_640.jpg</div>
+            <div class="card-desc">Original body (0) and face (2). Synthetic head (1) verified via DeepGHS + Catnip ensemble.</div>
+            <div class="metrics-grid">
+              <div class="metric-pill pill-body">Body: <strong>2</strong></div>
+              <div class="metric-pill pill-head">Head: <strong>2</strong></div>
+              <div class="metric-pill pill-face">Face: <strong>2</strong></div>
+            </div>
+            <div class="provenance-bar">
+              <span class="tag-provenance tag-new">★ 2 Enriched/NEW</span>
+              <span class="tag-provenance tag-gt">✓ 4 Original GT</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" data-dataset="manga109" data-type="slice">
+          <div class="card-header">
+            <span class="badge badge-dataset">Manga109</span>
+            <span class="badge badge-type">640×640 Slice</span>
+          </div>
+          <div class="img-container">
+            <img src="images/sample_01_manga109_manga109_OhWareraRettouSeitokai_083_512_0_1152_640.jpg" alt="manga109_OhWareraRettouSeitokai_083_512_0_1152_640.jpg" loading="lazy" />
+          </div>
+          <div class="card-body">
+            <div class="card-title" title="manga109_OhWareraRettouSeitokai_083_512_0_1152_640.jpg">manga109_OhWareraRettouSeitokai_083_512_0_1152_640.jpg</div>
+            <div class="card-desc">Original body (0) and face (2). Synthetic head (1) verified via DeepGHS + Catnip ensemble.</div>
+            <div class="metrics-grid">
+              <div class="metric-pill pill-body">Body: <strong>4</strong></div>
+              <div class="metric-pill pill-head">Head: <strong>4</strong></div>
+              <div class="metric-pill pill-face">Face: <strong>4</strong></div>
+            </div>
+            <div class="provenance-bar">
+              <span class="tag-provenance tag-new">★ 4 Enriched/NEW</span>
+              <span class="tag-provenance tag-gt">✓ 8 Original GT</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" data-dataset="manga109" data-type="slice">
+          <div class="card-header">
+            <span class="badge badge-dataset">Manga109</span>
+            <span class="badge badge-type">640×640 Slice</span>
+          </div>
+          <div class="img-container">
+            <img src="images/sample_02_manga109_manga109_Count3DeKimeteAgeru_071_0_530_640_1170.jpg" alt="manga109_Count3DeKimeteAgeru_071_0_530_640_1170.jpg" loading="lazy" />
+          </div>
+          <div class="card-body">
+            <div class="card-title" title="manga109_Count3DeKimeteAgeru_071_0_530_640_1170.jpg">manga109_Count3DeKimeteAgeru_071_0_530_640_1170.jpg</div>
+            <div class="card-desc">Original body (0) and face (2). Synthetic head (1) verified via DeepGHS + Catnip ensemble.</div>
+            <div class="metrics-grid">
+              <div class="metric-pill pill-body">Body: <strong>5</strong></div>
+              <div class="metric-pill pill-head">Head: <strong>1</strong></div>
+              <div class="metric-pill pill-face">Face: <strong>3</strong></div>
+            </div>
+            <div class="provenance-bar">
+              <span class="tag-provenance tag-new">★ 1 Enriched/NEW</span>
+              <span class="tag-provenance tag-gt">✓ 8 Original GT</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" data-dataset="manga109" data-type="slice">
+          <div class="card-header">
+            <span class="badge badge-dataset">Manga109</span>
+            <span class="badge badge-type">640×640 Slice</span>
+          </div>
+          <div class="img-container">
+            <img src="images/sample_03_manga109_manga109_ToutaMairimasu_031_0_530_640_1170.jpg" alt="manga109_ToutaMairimasu_031_0_530_640_1170.jpg" loading="lazy" />
+          </div>
+          <div class="card-body">
+            <div class="card-title" title="manga109_ToutaMairimasu_031_0_530_640_1170.jpg">manga109_ToutaMairimasu_031_0_530_640_1170.jpg</div>
+            <div class="card-desc">Original body (0) and face (2). Synthetic head (1) verified via DeepGHS + Catnip ensemble.</div>
+            <div class="metrics-grid">
+              <div class="metric-pill pill-body">Body: <strong>1</strong></div>
+              <div class="metric-pill pill-head">Head: <strong>1</strong></div>
+              <div class="metric-pill pill-face">Face: <strong>1</strong></div>
+            </div>
+            <div class="provenance-bar">
+              <span class="tag-provenance tag-new">★ 1 Enriched/NEW</span>
+              <span class="tag-provenance tag-gt">✓ 2 Original GT</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" data-dataset="ah_yolo" data-type="slice">
+          <div class="card-header">
+            <span class="badge badge-dataset">AnimeHeads YOLO (v1, v2, ahaf)</span>
+            <span class="badge badge-type">640×640 Slice</span>
+          </div>
+          <div class="img-container">
+            <img src="images/sample_04_ah_yolo_ahv1_20240915182518701720_a82240eb8823655b050874a9de84c6716a730441_jpg.rf.125bb0dd6209f47a134581f157e8c835_0_0_640_640.jpg" alt="ahv1_20240915182518701720_a82240eb8823655b050874a9de84c6716a730441_jpg.rf.125bb0dd6209f47a134581f157e8c835_0_0_640_640.jpg" loading="lazy" />
+          </div>
+          <div class="card-body">
+            <div class="card-title" title="ahv1_20240915182518701720_a82240eb8823655b050874a9de84c6716a730441_jpg.rf.125bb0dd6209f47a134581f157e8c835_0_0_640_640.jpg">ahv1_20240915182518701720_a82240eb8823655b050874a9de84c6716a730441_jpg.rf.125bb0dd6209f47a134581f157e8c835_0_0_640_640.jpg</div>
+            <div class="card-desc">Original head (1). Synthetic body (0) via person detector + calibrated face (2) via linear adapter.</div>
+            <div class="metrics-grid">
+              <div class="metric-pill pill-body">Body: <strong>1</strong></div>
+              <div class="metric-pill pill-head">Head: <strong>1</strong></div>
+              <div class="metric-pill pill-face">Face: <strong>1</strong></div>
+            </div>
+            <div class="provenance-bar">
+              <span class="tag-provenance tag-new">★ 2 Enriched/NEW</span>
+              <span class="tag-provenance tag-gt">✓ 1 Original GT</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" data-dataset="ah_yolo" data-type="slice">
+          <div class="card-header">
+            <span class="badge badge-dataset">AnimeHeads YOLO (v1, v2, ahaf)</span>
+            <span class="badge badge-type">640×640 Slice</span>
+          </div>
+          <div class="img-container">
+            <img src="images/sample_05_ah_yolo_ahv1_2074439_webp.rf.e162e31cf75e90272231565af9fb47da_0_0_640_640.jpg" alt="ahv1_2074439_webp.rf.e162e31cf75e90272231565af9fb47da_0_0_640_640.jpg" loading="lazy" />
+          </div>
+          <div class="card-body">
+            <div class="card-title" title="ahv1_2074439_webp.rf.e162e31cf75e90272231565af9fb47da_0_0_640_640.jpg">ahv1_2074439_webp.rf.e162e31cf75e90272231565af9fb47da_0_0_640_640.jpg</div>
+            <div class="card-desc">Original head (1). Synthetic body (0) via person detector + calibrated face (2) via linear adapter.</div>
+            <div class="metrics-grid">
+              <div class="metric-pill pill-body">Body: <strong>1</strong></div>
+              <div class="metric-pill pill-head">Head: <strong>1</strong></div>
+              <div class="metric-pill pill-face">Face: <strong>1</strong></div>
+            </div>
+            <div class="provenance-bar">
+              <span class="tag-provenance tag-new">★ 2 Enriched/NEW</span>
+              <span class="tag-provenance tag-gt">✓ 1 Original GT</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" data-dataset="ah_yolo" data-type="slice">
+          <div class="card-header">
+            <span class="badge badge-dataset">AnimeHeads YOLO (v1, v2, ahaf)</span>
+            <span class="badge badge-type">640×640 Slice</span>
+          </div>
+          <div class="img-container">
+            <img src="images/sample_06_ah_yolo_ahv1_20240915174556946760_d3ccf4b3ef4576b4265dccbe902c725a88773c3e_jpg.rf.9c02b907f261b52da6bf95d4155d2207_0_0_640_640.jpg" alt="ahv1_20240915174556946760_d3ccf4b3ef4576b4265dccbe902c725a88773c3e_jpg.rf.9c02b907f261b52da6bf95d4155d2207_0_0_640_640.jpg" loading="lazy" />
+          </div>
+          <div class="card-body">
+            <div class="card-title" title="ahv1_20240915174556946760_d3ccf4b3ef4576b4265dccbe902c725a88773c3e_jpg.rf.9c02b907f261b52da6bf95d4155d2207_0_0_640_640.jpg">ahv1_20240915174556946760_d3ccf4b3ef4576b4265dccbe902c725a88773c3e_jpg.rf.9c02b907f261b52da6bf95d4155d2207_0_0_640_640.jpg</div>
+            <div class="card-desc">Original head (1). Synthetic body (0) via person detector + calibrated face (2) via linear adapter.</div>
+            <div class="metrics-grid">
+              <div class="metric-pill pill-body">Body: <strong>1</strong></div>
+              <div class="metric-pill pill-head">Head: <strong>1</strong></div>
+              <div class="metric-pill pill-face">Face: <strong>1</strong></div>
+            </div>
+            <div class="provenance-bar">
+              <span class="tag-provenance tag-new">★ 2 Enriched/NEW</span>
+              <span class="tag-provenance tag-gt">✓ 1 Original GT</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" data-dataset="ah_yolo" data-type="slice">
+          <div class="card-header">
+            <span class="badge badge-dataset">AnimeHeads YOLO (v1, v2, ahaf)</span>
+            <span class="badge badge-type">640×640 Slice</span>
+          </div>
+          <div class="img-container">
+            <img src="images/sample_07_ah_yolo_ahv1_20240915174328552147_4b3b07e995af008b8bad8676bc2855f0f49aaf4f_jpg.rf.a30e206afc38b0d35579fff7ba68ec54_0_0_640_640.jpg" alt="ahv1_20240915174328552147_4b3b07e995af008b8bad8676bc2855f0f49aaf4f_jpg.rf.a30e206afc38b0d35579fff7ba68ec54_0_0_640_640.jpg" loading="lazy" />
+          </div>
+          <div class="card-body">
+            <div class="card-title" title="ahv1_20240915174328552147_4b3b07e995af008b8bad8676bc2855f0f49aaf4f_jpg.rf.a30e206afc38b0d35579fff7ba68ec54_0_0_640_640.jpg">ahv1_20240915174328552147_4b3b07e995af008b8bad8676bc2855f0f49aaf4f_jpg.rf.a30e206afc38b0d35579fff7ba68ec54_0_0_640_640.jpg</div>
+            <div class="card-desc">Original head (1). Synthetic body (0) via person detector + calibrated face (2) via linear adapter.</div>
+            <div class="metrics-grid">
+              <div class="metric-pill pill-body">Body: <strong>1</strong></div>
+              <div class="metric-pill pill-head">Head: <strong>1</strong></div>
+              <div class="metric-pill pill-face">Face: <strong>1</strong></div>
+            </div>
+            <div class="provenance-bar">
+              <span class="tag-provenance tag-new">★ 2 Enriched/NEW</span>
+              <span class="tag-provenance tag-gt">✓ 1 Original GT</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" data-dataset="ah_coco" data-type="slice">
+          <div class="card-header">
+            <span class="badge badge-dataset">AnimeHeads COCO (v3)</span>
+            <span class="badge badge-type">640×640 Slice</span>
+          </div>
+          <div class="img-container">
+            <img src="images/sample_08_ah_coco_ahv3_Photo-Apr-13-7-06-15-PM_png.rf.2d23d8ab9fbc95e9c9f3ab4c87c48df4_0_0_640_359.jpg" alt="ahv3_Photo-Apr-13-7-06-15-PM_png.rf.2d23d8ab9fbc95e9c9f3ab4c87c48df4_0_0_640_359.jpg" loading="lazy" />
+          </div>
+          <div class="card-body">
+            <div class="card-title" title="ahv3_Photo-Apr-13-7-06-15-PM_png.rf.2d23d8ab9fbc95e9c9f3ab4c87c48df4_0_0_640_359.jpg">ahv3_Photo-Apr-13-7-06-15-PM_png.rf.2d23d8ab9fbc95e9c9f3ab4c87c48df4_0_0_640_359.jpg</div>
+            <div class="card-desc">Original head (1). Synthetic body (0) via person detector + calibrated face (2) via linear adapter.</div>
+            <div class="metrics-grid">
+              <div class="metric-pill pill-body">Body: <strong>1</strong></div>
+              <div class="metric-pill pill-head">Head: <strong>1</strong></div>
+              <div class="metric-pill pill-face">Face: <strong>1</strong></div>
+            </div>
+            <div class="provenance-bar">
+              <span class="tag-provenance tag-new">★ 2 Enriched/NEW</span>
+              <span class="tag-provenance tag-gt">✓ 1 Original GT</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" data-dataset="ah_coco" data-type="slice">
+          <div class="card-header">
+            <span class="badge badge-dataset">AnimeHeads COCO (v3)</span>
+            <span class="badge badge-type">640×640 Slice</span>
+          </div>
+          <div class="img-container">
+            <img src="images/sample_09_ah_coco_ahv3_00020592_jpg.rf.799fe9e7006b29b2a65f51ed97b46caa_0_0_640_360.jpg" alt="ahv3_00020592_jpg.rf.799fe9e7006b29b2a65f51ed97b46caa_0_0_640_360.jpg" loading="lazy" />
+          </div>
+          <div class="card-body">
+            <div class="card-title" title="ahv3_00020592_jpg.rf.799fe9e7006b29b2a65f51ed97b46caa_0_0_640_360.jpg">ahv3_00020592_jpg.rf.799fe9e7006b29b2a65f51ed97b46caa_0_0_640_360.jpg</div>
+            <div class="card-desc">Original head (1). Synthetic body (0) via person detector + calibrated face (2) via linear adapter.</div>
+            <div class="metrics-grid">
+              <div class="metric-pill pill-body">Body: <strong>1</strong></div>
+              <div class="metric-pill pill-head">Head: <strong>1</strong></div>
+              <div class="metric-pill pill-face">Face: <strong>1</strong></div>
+            </div>
+            <div class="provenance-bar">
+              <span class="tag-provenance tag-new">★ 2 Enriched/NEW</span>
+              <span class="tag-provenance tag-gt">✓ 1 Original GT</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" data-dataset="ah_coco" data-type="slice">
+          <div class="card-header">
+            <span class="badge badge-dataset">AnimeHeads COCO (v3)</span>
+            <span class="badge badge-type">640×640 Slice</span>
+          </div>
+          <div class="img-container">
+            <img src="images/sample_10_ah_coco_ahv3_danbooru_6068770_24550b44e092c3b32cce79b50f7aa67e_jpg.rf.439539203dbed9c7656e8d99c80fe7fb_0_0_452_640.jpg" alt="ahv3_danbooru_6068770_24550b44e092c3b32cce79b50f7aa67e_jpg.rf.439539203dbed9c7656e8d99c80fe7fb_0_0_452_640.jpg" loading="lazy" />
+          </div>
+          <div class="card-body">
+            <div class="card-title" title="ahv3_danbooru_6068770_24550b44e092c3b32cce79b50f7aa67e_jpg.rf.439539203dbed9c7656e8d99c80fe7fb_0_0_452_640.jpg">ahv3_danbooru_6068770_24550b44e092c3b32cce79b50f7aa67e_jpg.rf.439539203dbed9c7656e8d99c80fe7fb_0_0_452_640.jpg</div>
+            <div class="card-desc">Original head (1). Synthetic body (0) via person detector + calibrated face (2) via linear adapter.</div>
+            <div class="metrics-grid">
+              <div class="metric-pill pill-body">Body: <strong>5</strong></div>
+              <div class="metric-pill pill-head">Head: <strong>6</strong></div>
+              <div class="metric-pill pill-face">Face: <strong>6</strong></div>
+            </div>
+            <div class="provenance-bar">
+              <span class="tag-provenance tag-new">★ 11 Enriched/NEW</span>
+              <span class="tag-provenance tag-gt">✓ 6 Original GT</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" data-dataset="ah_coco" data-type="slice">
+          <div class="card-header">
+            <span class="badge badge-dataset">AnimeHeads COCO (v3)</span>
+            <span class="badge badge-type">640×640 Slice</span>
+          </div>
+          <div class="img-container">
+            <img src="images/sample_11_ah_coco_ahv3_Higurashi-When-They-Cry-Dice-Killing-Arc-c001-v00-p013-dig-Yen-Press-LuCaZ-_jpg.rf.a05ec35fa9531d7b8f9a83b48d9349c0_0_0_426_640.jpg" alt="ahv3_Higurashi-When-They-Cry-Dice-Killing-Arc-c001-v00-p013-dig-Yen-Press-LuCaZ-_jpg.rf.a05ec35fa9531d7b8f9a83b48d9349c0_0_0_426_640.jpg" loading="lazy" />
+          </div>
+          <div class="card-body">
+            <div class="card-title" title="ahv3_Higurashi-When-They-Cry-Dice-Killing-Arc-c001-v00-p013-dig-Yen-Press-LuCaZ-_jpg.rf.a05ec35fa9531d7b8f9a83b48d9349c0_0_0_426_640.jpg">ahv3_Higurashi-When-They-Cry-Dice-Killing-Arc-c001-v00-p013-dig-Yen-Press-LuCaZ-_jpg.rf.a05ec35fa9531d7b8f9a83b48d9349c0_0_0_426_640.jpg</div>
+            <div class="card-desc">Original head (1). Synthetic body (0) via person detector + calibrated face (2) via linear adapter.</div>
+            <div class="metrics-grid">
+              <div class="metric-pill pill-body">Body: <strong>3</strong></div>
+              <div class="metric-pill pill-head">Head: <strong>4</strong></div>
+              <div class="metric-pill pill-face">Face: <strong>2</strong></div>
+            </div>
+            <div class="provenance-bar">
+              <span class="tag-provenance tag-new">★ 5 Enriched/NEW</span>
+              <span class="tag-provenance tag-gt">✓ 4 Original GT</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" data-dataset="izutsumi" data-type="slice">
+          <div class="card-header">
+            <span class="badge badge-dataset">Izutsumi (Dungeon Meshi)</span>
+            <span class="badge badge-type">640×640 Slice</span>
+          </div>
+          <div class="img-container">
+            <img src="images/sample_12_izutsumi_izutsumi_v09_0070_518_512_1158_1152.jpg" alt="izutsumi_v09_0070_518_512_1158_1152.jpg" loading="lazy" />
+          </div>
+          <div class="card-body">
+            <div class="card-title" title="izutsumi_v09_0070_518_512_1158_1152.jpg">izutsumi_v09_0070_518_512_1158_1152.jpg</div>
+            <div class="card-desc">Target character human-annotated ground truth passthrough (body, face).</div>
+            <div class="metrics-grid">
+              <div class="metric-pill pill-body">Body: <strong>1</strong></div>
+              <div class="metric-pill pill-head">Head: <strong>0</strong></div>
+              <div class="metric-pill pill-face">Face: <strong>1</strong></div>
+            </div>
+            <div class="provenance-bar">
+              <span class="tag-provenance tag-new">★ 0 Enriched/NEW</span>
+              <span class="tag-provenance tag-gt">✓ 2 Original GT</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" data-dataset="izutsumi" data-type="slice">
+          <div class="card-header">
+            <span class="badge badge-dataset">Izutsumi (Dungeon Meshi)</span>
+            <span class="badge badge-type">640×640 Slice</span>
+          </div>
+          <div class="img-container">
+            <img src="images/sample_13_izutsumi_izutsumi_v09_0072_0_978_640_1618.jpg" alt="izutsumi_v09_0072_0_978_640_1618.jpg" loading="lazy" />
+          </div>
+          <div class="card-body">
+            <div class="card-title" title="izutsumi_v09_0072_0_978_640_1618.jpg">izutsumi_v09_0072_0_978_640_1618.jpg</div>
+            <div class="card-desc">Target character human-annotated ground truth passthrough (body, face).</div>
+            <div class="metrics-grid">
+              <div class="metric-pill pill-body">Body: <strong>2</strong></div>
+              <div class="metric-pill pill-head">Head: <strong>0</strong></div>
+              <div class="metric-pill pill-face">Face: <strong>2</strong></div>
+            </div>
+            <div class="provenance-bar">
+              <span class="tag-provenance tag-new">★ 0 Enriched/NEW</span>
+              <span class="tag-provenance tag-gt">✓ 4 Original GT</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" data-dataset="izutsumi" data-type="slice">
+          <div class="card-header">
+            <span class="badge badge-dataset">Izutsumi (Dungeon Meshi)</span>
+            <span class="badge badge-type">640×640 Slice</span>
+          </div>
+          <div class="img-container">
+            <img src="images/sample_14_izutsumi_izutsumi_v09_0054_512_0_1152_640.jpg" alt="izutsumi_v09_0054_512_0_1152_640.jpg" loading="lazy" />
+          </div>
+          <div class="card-body">
+            <div class="card-title" title="izutsumi_v09_0054_512_0_1152_640.jpg">izutsumi_v09_0054_512_0_1152_640.jpg</div>
+            <div class="card-desc">Target character human-annotated ground truth passthrough (body, face).</div>
+            <div class="metrics-grid">
+              <div class="metric-pill pill-body">Body: <strong>1</strong></div>
+              <div class="metric-pill pill-head">Head: <strong>0</strong></div>
+              <div class="metric-pill pill-face">Face: <strong>2</strong></div>
+            </div>
+            <div class="provenance-bar">
+              <span class="tag-provenance tag-new">★ 0 Enriched/NEW</span>
+              <span class="tag-provenance tag-gt">✓ 3 Original GT</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" data-dataset="izutsumi" data-type="slice">
+          <div class="card-header">
+            <span class="badge badge-dataset">Izutsumi (Dungeon Meshi)</span>
+            <span class="badge badge-type">640×640 Slice</span>
+          </div>
+          <div class="img-container">
+            <img src="images/sample_15_izutsumi_izutsumi_v09_0054_0_0_640_640.jpg" alt="izutsumi_v09_0054_0_0_640_640.jpg" loading="lazy" />
+          </div>
+          <div class="card-body">
+            <div class="card-title" title="izutsumi_v09_0054_0_0_640_640.jpg">izutsumi_v09_0054_0_0_640_640.jpg</div>
+            <div class="card-desc">Target character human-annotated ground truth passthrough (body, face).</div>
+            <div class="metrics-grid">
+              <div class="metric-pill pill-body">Body: <strong>1</strong></div>
+              <div class="metric-pill pill-head">Head: <strong>0</strong></div>
+              <div class="metric-pill pill-face">Face: <strong>1</strong></div>
+            </div>
+            <div class="provenance-bar">
+              <span class="tag-provenance tag-new">★ 0 Enriched/NEW</span>
+              <span class="tag-provenance tag-gt">✓ 2 Original GT</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" data-dataset="manga109" data-type="full">
+          <div class="card-header">
+            <span class="badge badge-dataset">Manga109</span>
+            <span class="badge badge-type">Full Canvas</span>
+          </div>
+          <div class="img-container">
+            <img src="images/sample_16_manga109_FULL_manga109_UnbalanceTokyo_036.jpg" alt="FULL_manga109_UnbalanceTokyo_036.jpg" loading="lazy" />
+          </div>
+          <div class="card-body">
+            <div class="card-title" title="FULL_manga109_UnbalanceTokyo_036.jpg">FULL_manga109_UnbalanceTokyo_036.jpg</div>
+            <div class="card-desc">Original body (0) and face (2). Synthetic head (1) verified via DeepGHS + Catnip ensemble.</div>
+            <div class="metrics-grid">
+              <div class="metric-pill pill-body">Body: <strong>10</strong></div>
+              <div class="metric-pill pill-head">Head: <strong>5</strong></div>
+              <div class="metric-pill pill-face">Face: <strong>9</strong></div>
+            </div>
+            <div class="provenance-bar">
+              <span class="tag-provenance tag-new">★ 5 Enriched/NEW</span>
+              <span class="tag-provenance tag-gt">✓ 19 Original GT</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" data-dataset="ah_yolo" data-type="full">
+          <div class="card-header">
+            <span class="badge badge-dataset">AnimeHeads YOLO (v1, v2, ahaf)</span>
+            <span class="badge badge-type">Full Canvas</span>
+          </div>
+          <div class="img-container">
+            <img src="images/sample_17_ah_yolo_FULL_ahv1_7513289_webp.rf.4efd98f89c818c6d1d686dc849106381.jpg" alt="FULL_ahv1_7513289_webp.rf.4efd98f89c818c6d1d686dc849106381.jpg" loading="lazy" />
+          </div>
+          <div class="card-body">
+            <div class="card-title" title="FULL_ahv1_7513289_webp.rf.4efd98f89c818c6d1d686dc849106381.jpg">FULL_ahv1_7513289_webp.rf.4efd98f89c818c6d1d686dc849106381.jpg</div>
+            <div class="card-desc">Original head (1). Synthetic body (0) via person detector + calibrated face (2) via linear adapter.</div>
+            <div class="metrics-grid">
+              <div class="metric-pill pill-body">Body: <strong>3</strong></div>
+              <div class="metric-pill pill-head">Head: <strong>4</strong></div>
+              <div class="metric-pill pill-face">Face: <strong>4</strong></div>
+            </div>
+            <div class="provenance-bar">
+              <span class="tag-provenance tag-new">★ 7 Enriched/NEW</span>
+              <span class="tag-provenance tag-gt">✓ 4 Original GT</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" data-dataset="ah_coco" data-type="full">
+          <div class="card-header">
+            <span class="badge badge-dataset">AnimeHeads COCO (v3)</span>
+            <span class="badge badge-type">Full Canvas</span>
+          </div>
+          <div class="img-container">
+            <img src="images/sample_18_ah_coco_FULL_ahv3_DnCj0QDVAAALtHh_jpg.rf.c8a99b8af35e455f03bf5af819baca9c.jpg" alt="FULL_ahv3_DnCj0QDVAAALtHh_jpg.rf.c8a99b8af35e455f03bf5af819baca9c.jpg" loading="lazy" />
+          </div>
+          <div class="card-body">
+            <div class="card-title" title="FULL_ahv3_DnCj0QDVAAALtHh_jpg.rf.c8a99b8af35e455f03bf5af819baca9c.jpg">FULL_ahv3_DnCj0QDVAAALtHh_jpg.rf.c8a99b8af35e455f03bf5af819baca9c.jpg</div>
+            <div class="card-desc">Original head (1). Synthetic body (0) via person detector + calibrated face (2) via linear adapter.</div>
+            <div class="metrics-grid">
+              <div class="metric-pill pill-body">Body: <strong>2</strong></div>
+              <div class="metric-pill pill-head">Head: <strong>2</strong></div>
+              <div class="metric-pill pill-face">Face: <strong>2</strong></div>
+            </div>
+            <div class="provenance-bar">
+              <span class="tag-provenance tag-new">★ 4 Enriched/NEW</span>
+              <span class="tag-provenance tag-gt">✓ 2 Original GT</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="card" data-dataset="izutsumi" data-type="full">
+          <div class="card-header">
+            <span class="badge badge-dataset">Izutsumi (Dungeon Meshi)</span>
+            <span class="badge badge-type">Full Canvas</span>
+          </div>
+          <div class="img-container">
+            <img src="images/sample_19_izutsumi_FULL_izutsumi_v09_0066.jpg" alt="FULL_izutsumi_v09_0066.jpg" loading="lazy" />
+          </div>
+          <div class="card-body">
+            <div class="card-title" title="FULL_izutsumi_v09_0066.jpg">FULL_izutsumi_v09_0066.jpg</div>
+            <div class="card-desc">Target character human-annotated ground truth passthrough (body, face).</div>
+            <div class="metrics-grid">
+              <div class="metric-pill pill-body">Body: <strong>2</strong></div>
+              <div class="metric-pill pill-head">Head: <strong>0</strong></div>
+              <div class="metric-pill pill-face">Face: <strong>2</strong></div>
+            </div>
+            <div class="provenance-bar">
+              <span class="tag-provenance tag-new">★ 0 Enriched/NEW</span>
+              <span class="tag-provenance tag-gt">✓ 4 Original GT</span>
+            </div>
+          </div>
+        </div>
+        
+  </div>
+
+  <script>
+    function filterGallery(dataset) {
+      const buttons = document.querySelectorAll('.filter-btn');
+      buttons.forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+
+      const cards = document.querySelectorAll('.card');
+      cards.forEach(card => {
+        if (dataset === 'all' || card.getAttribute('data-dataset') === dataset) {
+          card.style.display = 'flex';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+  </script>
+</body>
+</html>

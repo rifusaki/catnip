@@ -165,6 +165,7 @@ pixi run benchmark-faces --sample 200        # Benchmarks face detection (Catnip
 pixi run benchmark-heads --sample 200        # Benchmarks head detection (Catnip vs DeepGHS Head Nano)
 pixi run benchmark-faces --download-only     # Downloads & caches all external benchmark weights
 pixi run benchmark-presentation              # Headlessly executes & embeds results into catnipBenchmarkPresentation.ipynb
+pixi run visualize-gt                        # Generates visual Ground Truth enrichment gallery into docs/gt_gallery & results/gt_gallery
 
 # Pseudo-labeling & adapter calibration (v2 data chain; teachers cached per process — Gotcha 12)
 pixi run python scripts/unify/pseudo_label.py --target-section calibrate --device mps --adapter config/face_box_adapter.json
