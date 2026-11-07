@@ -355,21 +355,41 @@ def verify_anime_bodies(
     conf_body: float = CONF_BODY_TEACHER,
     ios_head_in_body: float = 0.70,
     iou_torso: float = 0.80,
+    max_body_dim: float = 0.92,
+    max_body_area: float = 0.82,
+    min_torso_extension_ratio: float = 0.35,
+    min_body_head_height_ratio: float = 1.35,
 ) -> list[Detection]:
-    """Accept body predictions that enclose a GT head AND include a torso.
+    """Accept body predictions that enclose a GT head AND include a true torso.
 
-    A body qualifies when it encloses at least one GT head with
-    ``IoS(head, body) >= 0.70`` and is genuinely larger than the head
-    (``IoU(body, head) <= 0.80``) — a person crop, not a headshot rectangle.
+    Rejects:
+    1. Low-confidence predictions (``score < conf_body``).
+    2. Spacious canvas-filler boxes spanning the whole image (``dim >= 0.92`` or ``area >= 0.82``).
+    3. Headshot/portrait crops lacking genuine torso extension below the chin
+       (``torso_ext < 0.35 * head_h`` or ``body_h < 1.35 * head_h``).
     """
     accepted: list[Detection] = []
     for body in teacher_bodies:
         if body.score < conf_body:
             continue
-        has_verified_head = any(
-            box_ios(head, body) >= ios_head_in_body and box_iou(body, head) <= iou_torso
-            for head in gt_heads
-        )
+        bw = body.x2 - body.x1
+        bh = body.y2 - body.y1
+        # Guard: Reject canvas-filler whole-image bounding boxes
+        if (bw >= max_body_dim and bh >= max_body_dim) or (bw * bh >= max_body_area):
+            continue
+
+        has_verified_head = False
+        for head in gt_heads:
+            if box_ios(head, body) < ios_head_in_body:
+                continue
+            if box_iou(body, head) > iou_torso:
+                continue
+            head_h = head.y2 - head.y1
+            torso_ext = body.y2 - head.y2
+            if torso_ext >= min_torso_extension_ratio * head_h and bh >= min_body_head_height_ratio * head_h:
+                has_verified_head = True
+                break
+
         if has_verified_head:
             accepted.append(replace(body, class_id=CLASS_BODY))
     return accepted

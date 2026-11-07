@@ -242,6 +242,23 @@ def test_bodies_confidence_floor() -> None:
     assert verify_anime_bodies([weak_full_figure], [head]) == []
 
 
+def test_bodies_reject_canvas_fillers() -> None:
+    head = det(0.45, 0.10, 0.55, 0.30, score=1.0, class_id=1)
+    canvas_filler = det(0.01, 0.01, 0.99, 0.99, score=0.95, class_id=0)  # spans >0.92 in both dims
+    huge_area = det(0.05, 0.05, 0.98, 0.95, score=0.95, class_id=0)      # area ~0.837 > 0.82
+
+    assert verify_anime_bodies([canvas_filler], [head]) == []
+    assert verify_anime_bodies([huge_area], [head]) == []
+
+
+def test_bodies_reject_insufficient_torso_extension() -> None:
+    head = det(0.45, 0.10, 0.55, 0.50, score=1.0, class_id=1)  # head_h = 0.40
+    # Body barely extends below chin (torso_ext = 0.54 - 0.50 = 0.04 < 0.35 * 0.40 = 0.14)
+    shallow_torso = det(0.40, 0.08, 0.60, 0.54, score=0.95, class_id=0)
+
+    assert verify_anime_bodies([shallow_torso], [head]) == []
+
+
 # ========================================================================
 # Deterministic headshot downsampling
 # ========================================================================
