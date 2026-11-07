@@ -34,6 +34,12 @@ def test_parse_label_boxes(tmp_path: Path):
     assert boxes_ah[1].cls_id == 1 and not boxes_ah[1].is_new
     assert boxes_ah[2].cls_id == 2 and boxes_ah[2].is_new
 
+    # Test for izutsumi (face is new, body and head are GT)
+    boxes_iz = parse_label_boxes(lbl_file, "izutsumi")
+    assert boxes_iz[0].cls_id == 0 and not boxes_iz[0].is_new
+    assert boxes_iz[1].cls_id == 1 and not boxes_iz[1].is_new
+    assert boxes_iz[2].cls_id == 2 and boxes_iz[2].is_new
+
 
 def test_render_annotated_image(tmp_path: Path):
     img_path = tmp_path / "test.jpg"

@@ -54,9 +54,9 @@ DATASET_METADATA: Dict[str, dict] = {
     "izutsumi": {
         "title": "Izutsumi (Dungeon Meshi)",
         "domain": "Manga Line-Art",
-        "description": "Target character human-annotated ground truth passthrough (body, face).",
-        "new_classes": set(),
-        "gt_classes": {0, 2},
+        "description": "Target character ground truth with verified heads (1) and calibrated tight faces (2).",
+        "new_classes": {2},
+        "gt_classes": {0, 1},
     },
     "manga109": {
         "title": "Manga109",
@@ -205,7 +205,8 @@ def collect_samples(
     train_lbl_dir: Path,
     train_img_dir: Path,
     staging_dir: Optional[Path],
-    samples_per_dataset: int = 4,
+    samples_per_dataset: int = 8,
+    full_samples_per_dataset: int = 2,
     seed: int = 42,
 ) -> List[GalleryItem]:
     """Select representative slices and full images across all datasets."""
@@ -232,9 +233,9 @@ def collect_samples(
                 classes = set(b.cls_id for b in boxes)
                 if len(classes) >= min_classes:
                     candidates.append((lbl_p, img_p, boxes))
-                    if len(candidates) >= 50:
+                    if len(candidates) >= 120:
                         break
-            if len(candidates) >= 50:
+            if len(candidates) >= 120:
                 break
 
         random.shuffle(candidates)
@@ -271,21 +272,21 @@ def collect_samples(
                 classes = set(b.cls_id for b in boxes)
                 if len(classes) >= min_c and len(boxes) >= 4:
                     full_cands.append((lbl_p, img_p, boxes))
-                    if len(full_cands) >= 20:
+                    if len(full_cands) >= 40:
                         break
 
             if full_cands:
                 random.shuffle(full_cands)
-                _, chosen_img, chosen_boxes = full_cands[0]
-                items.append(
-                    GalleryItem(
-                        dataset_key=ds_key,
-                        sample_id=f"FULL_{chosen_img.name}",
-                        image_path=chosen_img,
-                        boxes=chosen_boxes,
-                        is_full_page=True,
+                for _, chosen_img, chosen_boxes in full_cands[:full_samples_per_dataset]:
+                    items.append(
+                        GalleryItem(
+                            dataset_key=ds_key,
+                            sample_id=f"FULL_{chosen_img.name}",
+                            image_path=chosen_img,
+                            boxes=chosen_boxes,
+                            is_full_page=True,
+                        )
                     )
-                )
 
     return items
 
@@ -632,8 +633,14 @@ def parse_args():
     parser.add_argument(
         "--samples-per-dataset",
         type=int,
-        default=4,
-        help="Number of 640px slices per dataset (default: 4).",
+        default=8,
+        help="Number of 640px slices per dataset (default: 8).",
+    )
+    parser.add_argument(
+        "--full-samples-per-dataset",
+        type=int,
+        default=2,
+        help="Number of full canvas images per dataset (default: 2).",
     )
     parser.add_argument(
         "--seed",
@@ -681,6 +688,7 @@ def main():
         train_img_dir=train_img_dir,
         staging_dir=staging_dir,
         samples_per_dataset=args.samples_per_dataset,
+        full_samples_per_dataset=args.full_samples_per_dataset,
         seed=args.seed,
     )
     logger.info("Selected %d total samples. Rendering boxes...", len(items))
