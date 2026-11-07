@@ -149,7 +149,7 @@ if not dataset_yaml.exists():
     print(f"[RemoteRunner] /content free disk: {free_gb:.1f} GB")
     assert free_gb >= 35.0, f"Insufficient disk: {free_gb:.1f} GB < 35 GB required."
 
-    tar_path = Path("/content/stage1_sliced.tar")
+    tar_path = Path(f"/content/{ARCHIVE_STEM}.tar")
     try:
         s3.head_object(Bucket=BUCKET, Key=STAGE1_DATASET_KEY)
         archive_present = True
@@ -253,7 +253,9 @@ watcher_thread = threading.Thread(target=checkpoint_watcher, daemon=True)
 watcher_thread.start()
 
 # --- 7. Run Training (phase 1: main schedule) ---
+dataset_dir = LOCAL_DATA_ROOT / "training" / ARCHIVE_STEM
 phase1_overrides = [
+    "--override", f"paths.stage1_sliced_dir={dataset_dir}",
     "--override", f"training.stage1.device={STAGE1_DEVICE}",
     "--override", f"training.stage1.workers={STAGE1_WORKERS}",
     "--override", f"training.stage1.batch={STAGE1_BATCH}",
@@ -263,13 +265,14 @@ phase1_overrides = [
 ]
 if resume_flag:
     # Chain resume: ultralytics restores full args from the checkpoint.
-    phase1_argv = ["stage1.py", *phase1_overrides, *resume_flag, "--verbose"]
+    phase1_argv = ["stage1.py", "--dataset", str(dataset_yaml), *phase1_overrides, *resume_flag, "--verbose"]
 else:
     # Fresh start: pin the config model to the downloaded base weights
     # (config defaults to yolo26m; the env key owns the actual base so
     # v1 reproduction works from the same config).
     phase1_argv = [
         "stage1.py",
+        "--dataset", str(dataset_yaml),
         "--override", f"training.stage1.model={model_arg}",
         *phase1_overrides,
         "--verbose",
@@ -303,7 +306,9 @@ if POLISH_ENABLED and phase1_best.exists():
     sys.argv = [
         "stage1.py",
         "--polish",
+        "--dataset", str(dataset_yaml),
         "--resume", str(phase1_best),
+        "--override", f"paths.stage1_sliced_dir={dataset_dir}",
         "--override", f"training.stage1.device={STAGE1_DEVICE}",
         "--override", f"training.stage1.batch={STAGE1_BATCH}",
         "--override", f"training.stage1.epochs={POLISH_EPOCHS}",

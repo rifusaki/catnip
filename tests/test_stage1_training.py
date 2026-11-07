@@ -516,3 +516,109 @@ def test_pixi_m3_task_pins_complete_v1_profile() -> None:
     assert pins["training.stage1.epochs"] == match.group(1), (
         "train-stage1-m3 epochs pin diverged from m3_chain.sh EPOCHS default"
     )
+
+
+# ---------------------------------------------------------------------------
+# (g) Dataset resolution & --dataset CLI argument
+# ---------------------------------------------------------------------------
+
+class _InterceptTrain(Exception):
+    def __init__(self, data_arg: str) -> None:
+        self.data_arg = data_arg
+
+
+class _MockYOLO:
+    def __init__(self, *args, **kwargs) -> None:
+        pass
+
+    def add_callback(self, *args, **kwargs) -> None:
+        pass
+
+    def train(self, *args, **kwargs) -> None:
+        raise _InterceptTrain(kwargs.get("data", ""))
+
+
+def test_explicit_dataset_arg_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ds_dir = tmp_path / "custom_ds"
+    ds_dir.mkdir()
+    yaml_file = ds_dir / "dataset.yaml"
+    yaml_file.write_text("path: custom\nnames: {0: body}\n")
+
+    monkeypatch.setattr(stage1, "YOLO", _MockYOLO)
+    monkeypatch.setattr(sys, "argv", [
+        "stage1.py",
+        "--dataset", str(ds_dir),
+        "--override", "training.stage1.epochs=1",
+        "--override", "training.stage1.use_subset=false",
+    ])
+
+    with pytest.raises(_InterceptTrain) as exc:
+        stage1.main()
+    assert Path(exc.value.data_arg).resolve() == yaml_file.resolve()
+
+
+def test_explicit_dataset_arg_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ds_dir = tmp_path / "custom_ds"
+    ds_dir.mkdir()
+    yaml_file = ds_dir / "custom_dataset.yaml"
+    yaml_file.write_text("path: custom\nnames: {0: body}\n")
+
+    monkeypatch.setattr(stage1, "YOLO", _MockYOLO)
+    monkeypatch.setattr(sys, "argv", [
+        "stage1.py",
+        "--dataset", str(yaml_file),
+        "--override", "training.stage1.epochs=1",
+        "--override", "training.stage1.use_subset=false",
+    ])
+
+    with pytest.raises(_InterceptTrain) as exc:
+        stage1.main()
+    assert Path(exc.value.data_arg).resolve() == yaml_file.resolve()
+
+
+def test_explicit_dataset_arg_missing_exits_1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+) -> None:
+    nonexistent = tmp_path / "ghost_ds"
+    monkeypatch.setattr(stage1, "YOLO", _MockYOLO)
+    monkeypatch.setattr(sys, "argv", [
+        "stage1.py",
+        "--dataset", str(nonexistent),
+        "--override", "training.stage1.use_subset=false",
+    ])
+
+    with pytest.raises(SystemExit) as exc:
+        with caplog.at_level(logging.ERROR):
+            stage1.main()
+    assert exc.value.code == 1
+    assert "not found" in caplog.text
+
+
+def test_autodiscover_stage1_v2_sliced_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Setup a data root with stage1_v2_sliced but NO stage1_sliced
+    training_dir = tmp_path / "training"
+    v2_dir = training_dir / "stage1_v2_sliced"
+    v2_dir.mkdir(parents=True)
+    v2_yaml = v2_dir / "dataset.yaml"
+    v2_yaml.write_text("path: v2\nnames: {0: body}\n")
+
+    monkeypatch.setattr(stage1, "YOLO", _MockYOLO)
+    monkeypatch.setattr(sys, "argv", [
+        "stage1.py",
+        "--override", f"paths.data={tmp_path}",
+        "--override", f"paths.unified_dir={training_dir / 'stage1'}",
+        "--override", f"paths.stage1_sliced_dir={training_dir / 'stage1_sliced'}",
+        "--override", "training.stage1.epochs=1",
+        "--override", "training.stage1.use_subset=false",
+    ])
+
+    with pytest.raises(_InterceptTrain) as exc:
+        stage1.main()
+    assert Path(exc.value.data_arg).resolve() == v2_yaml.resolve()
+

@@ -94,11 +94,15 @@ Catnip is a two-stage manga character detection and re-identification pipeline d
 
 ### Gotcha 13: wrangler's 300 MiB Object Cap vs. the 13 GB v2 Archive
 * **Symptom:** `npx wrangler r2 object put` hard-fails above **300 MiB** ("Wrangler only supports uploading files up to 300 MiB") — a 13 GB `stage1_v2_sliced.tar` cannot go up in one object, and even naive multi-GB splits die.
-* **Fix:** The pipeline splits archives into ~290 MB `.part_*` chunks; `remote_runner.py` reconstructs on Colab (list parts → download → concatenate → extract) when the main key is missing. `models/yolo26m.pt` (44 MB) is fine via a single put. rclone handles large objects via multipart natively where its remote is configured.
+* **Fix:** The pipeline initially split archives into ~290 MB `.part_*` chunks due to wrangler CLI limits. `notebooks/catnipConsolidateR2Tar.ipynb` (and `scripts/colab/consolidate_r2_tar.py`) uses S3 Multipart Upload via boto3 to join all 46 parts directly on a CPU Colab instance and safely replace them with the unified `compressed/stage1_v2_sliced.tar` in R2. `remote_runner.py` natively supports both the unified archive (direct download) and split parts fallback.
 
 ### Gotcha 14: SSD Ejections + exec-argv Limits in the v2 Pipeline
 * **Symptom:** A mid-run SSD ejection fails the chain loudly at the next artifact check (enrichment writers only touch disk at each source's END, so no partial trees result). Separately, `cat`-ing ~74k label files via a glob blows the exec argv limit (`Argument list too long`, exit 126).
 * **Fix:** `runs/v2-pipeline/pipeline_v2.sh` is idempotent and resumable — every step skips on its manifest/marker file (per-part upload markers included), and the class tally uses `find | xargs -0 cat`. Re-run the script after any ejection; it converges to the same state (`state.log` carries DONE/SKIP/FAIL markers). Running the chain under `caffeinate -i` avoids sleep-induced bus unmounts.
+
+### Gotcha 15: Stage 1 v2 Sliced Dataset Directory Resolution on Colab
+* **Symptom:** `scripts/colab/remote_runner.py` extracting `compressed/stage1_v2_sliced.tar` puts the dataset in `/content/catnip-data-local/training/stage1_v2_sliced`, but `stage1.py` historically looked only for `training/stage1_sliced` or `training/stage1`, exiting with code 1 (`No dataset.yaml found at /content/catnip-data-local/training/stage1_sliced or /content/catnip-data-local/training/stage1`).
+* **Fix:** `stage1.py` now supports `--dataset <path>` directly and auto-discovers `stage1_v2_sliced` if `stage1_sliced` is absent. `remote_runner.py` forwards `--dataset` and `--override paths.stage1_sliced_dir={dataset_dir}` to both phase 1 and golden polish.
 
 ---
 

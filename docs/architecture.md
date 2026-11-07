@@ -1,6 +1,7 @@
 # Catnip: System Architecture & Design
 
 > **Operations:** For step-by-step data prep, pre-slicing, and training commands, see [`docs/runbook.md`](runbook.md).
+> **Implementation Plan & Handoff:** For the Stage 1 v2 (`yolo26m` on L4, 97–98%+ precision) and Stage 2 Semi-Supervised Clustering implementation plan, see [`docs/implementation_plan.md`](implementation_plan.md).
 
 ## 1. Objective
 
@@ -57,19 +58,35 @@ Source annotations in Label Studio use 6 fine-grained labels to retain full anno
 
 ### 2.2 Stage 1: Sliced Localization (SAHI + YOLO26)
 
-- **Model:** `yolo26n` (Ultralytics YOLO26 Nano) pretrained on COCO, fine-tuned on the unified manga/anime detection dataset.
+- **Baseline Model (`v1`):** `yolo26n` (Ultralytics YOLO26 Nano, 2.5M params) pretrained on COCO, fine-tuned on the unified manga/anime detection dataset (`0.8823` face mAP@50, `0.8555` head mAP@50 on the 16k test split).
 - **SAHI (Slicing Aided Hyper Inference):** Manga pages vary from 800×1200 to 2000×3000+ pixels. Slicing into overlapping 640×640 windows catches tiny faces without losing high-resolution detail or requiring panel segmentation.
 - **Train/Inference Parity (Pre-Slicing):** The training pipeline pre-slices training images with the exact same SAHI parameters (`slice_height=640`, `slice_width=640`, `overlap_ratio=0.2`). Training at `imgsz=640` guarantees the model sees identical object scale and context distributions during both training and inference.
-- **Training Setup:** Cosine LR schedule, MuSGD optimizer, patience=15, 150 epochs (or 40-epoch stratified subset runs).
+- **Stage 1 v2 Roadmap (Colab Pro L4 GPU — Target 97–98%+ Precision & Colored Art Generalization):**
+  1. **Architecture Scale-Up:** Upgrade from `yolo26n` (2.5M) to **`yolo26m` (~20M params)** on Colab Pro L4 (24 GB VRAM, `batch=48–64`, `amp=True`, `cls_pw=1.0`).
+  2. **Geometrically Verified Synthetic Pseudo-Labeling (Replacing Partial Labels):**
+     - Eliminates negative BCE gradient contamination caused by `Manga109` lacking `head` labels and `AnimeHeads` lacking `face` and `body` labels (superior to sequential staged training, which suffers from catastrophic class forgetting).
+     - **`head` on `Manga109`:** Generated via `deepghs/anime_head_detection` (`head_detect_v2.0_x_yv11`) + `Catnip-Stage1` WBF ensemble, accepted only when enclosing a GT `<face>` ($\text{IoS} \ge 0.80$) or sitting atop a GT `<body>`.
+     - **`face` on `AnimeHeads`:** Generated via `deepghs/anime_face_detection` (`face_detect_v1.4_x`) + `zymk9_face` strictly inside GT `head` boxes ($\text{IoS} \ge 0.85$), transformed through a **4-parameter linear box-regression adapter** $(\Delta x_c, \Delta y_c, s_w, s_h)$ fitted on `Manga109`/`izutsumi` to align Danbooru face bounds to tight `Manga109`/`izutsumi` `<face>` conventions.
+     - **`body` on `AnimeHeads`:** Generated via `deepghs/anime_person_detection` (`person_detect_v1.2_x`) verified to contain a GT `head` ($\text{IoS} \ge 0.70$); disembodied portrait crops without torsos are downsampled so training slices carry complete 3-class (`body`, `head`, `face`) supervision.
+  3. **Color-to-Line-Art Bridging:** Enable `hsv_h=0.015`, `hsv_s=0.5`, `hsv_v=0.4` + `RandomGrayscale(p=0.25)` on colored illustrations so early backbone layers learn domain-invariant line/contour representations across B&W manga and colored fanart.
+  4. **Dynamic Panel/Page Cropping & WBF:** Gate SAHI slicing in `src/detection/sahi_extractor.py` so pre-cropped manga panels ($\max(H, W) \le 800\text{px}$) run direct `640px` letterboxed inference while full pages run `640×640` SAHI slicing, followed by **Weighted Box Fusion (WBF)** and hierarchical containment filtering (`face` $\subset$ `head` $\subset$ `body`).
 
 ---
 
-### 2.3 Stage 2: Metric Learning & Re-Identification
+### 2.3 Stage 2: Semi-Supervised Multi-Prototype Character Clustering & Re-Identification
 
-- **Model:** ResNet18 backbone (ImageNet pretrained) + Generalized Mean (GeM) Pooling + Triplet Margin Loss.
-- **Embedding Space:** Maps image crops to 128-dimensional L2-normalized embeddings.
-- **Why Metric Learning over Standard Classification:** Allows open-set matching against few-shot reference "seeds" of Izutsumi without retraining when new reference art is added.
-- **Matching:** FAISS `IndexFlatIP` computes cosine similarity between candidate crops and reference seed vectors. Candidates above the similarity threshold (default: 0.70) are classified as Izutsumi.
+- **Evolution from Binary Triplet Loss to Semi-Supervised Clustering:**
+  - *Limitations of Naive Binary Triplet Loss (`ResNet18` `izutsumi` vs `not_izutsumi`):* Treating `"not_izutsumi"` as a single class forces visually distinct characters (Laios, Marcille, Senshi, NPCs) together, while representing Izutsumi with a single unimodal centroid fails across her distinct visual modes *(standard cat-girl face, feral/chibi comedic reaction faces, hooded Ch. 31–33 panels, full-body tail silhouettes, and colored fanart vs. monochrome screentones)*.
+- **Stage 2 Target Architecture (`src/reid/`):**
+  1. **Domain-Pretrained Feature Extractor (`src/reid/model.py`):** Anime/manga-pretrained backbone (`deepghs/ccip`, `DINOv2-ViT-S/14`, or `ConvNeXt-Small` + Generalized Mean `GeM` Pooling) fine-tuned on L4 with **Supervised Contrastive Loss (`SupConLoss`) / Sub-Center ArcFace** into L2-normalized embeddings.
+  2. **Multi-Granularity Instance Fusion:** Fuses embeddings from nested `[face, head, body]` detections belonging to the same character instance within a panel.
+  3. **FAISS k-NN Graph + HDBSCAN Sub-Clustering (`src/reid/clustering.py`):**
+     - Indexes all candidate character crops in `FAISS IndexFlatIP` and discovers natural density sub-clusters via **HDBSCAN** (or Leiden community detection).
+     - Models Izutsumi as a **collection of verified sub-cluster medoids/prototypes** (covering normal, comedic/chibi, hooded, silhouette, and colored fanart modes) anchored by Must-Link (`izutsumi`) and Cannot-Link (`other`) seeds.
+  4. **Contextual Panel & Page Co-Occurrence Constraints:**
+     - *Same-Panel Cannot-Link:* Two distinct character bodies inside the same panel cannot both be assigned to Izutsumi.
+     - *Same-Page Prior Propagation:* A high-confidence Izutsumi match in one panel boosts the matching prior for partial/back-view crops in adjacent panels on the same page.
+  5. **Two-Tier Verification:** Auto-accepts core cluster members ($\text{sim} \ge \tau_{\text{core}}$) at **98%+ precision**, while surfacing ambiguous boundary sub-clusters for 1-click cluster-level confirmation.
 
 ---
 

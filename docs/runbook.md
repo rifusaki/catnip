@@ -2,6 +2,8 @@
 
 End-to-end operational guide for data preparation, SAHI pre-slicing, Stage 1 YOLO training, and checkpoint management.
 
+> **Next-Gen Roadmap & Handoff:** See [`docs/implementation_plan.md`](implementation_plan.md) for the Stage 1 v2 (`yolo26m` L4 upgrade, cross-dataset pseudo-labeling, WBF, dynamic panel cropping) and Stage 2 Semi-Supervised Clustering implementation plan.
+
 ## TL;DR
 
 ```bash

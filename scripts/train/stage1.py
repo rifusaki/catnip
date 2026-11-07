@@ -477,6 +477,10 @@ def main() -> None:
         help="Path to pipeline config YAML (default: config/pipeline.yaml)",
     )
     parser.add_argument(
+        "--dataset", type=Path, default=None,
+        help="Explicit path to dataset.yaml or sliced dataset directory.",
+    )
+    parser.add_argument(
         "--override", action="append", default=[], metavar="KEY=VALUE",
         help="Override config values via dot-notation (e.g. training.stage1.batch=4)",
     )
@@ -515,49 +519,40 @@ def main() -> None:
 
     if args.polish:
         stage1 = _apply_polish_profile(stage1, args.override)
+        if stage1.use_subset:
+            logger.error(
+                "--polish oversamples the full sliced dataset; set "
+                "training.stage1.use_subset=false."
+            )
+            sys.exit(2)
 
     # Warn if the requested GPU/accelerator is not available
     _check_gpu(stage1.device)
 
-    # --- Validate pre-unified training data ---
-    # Prefer the SAHI-sliced dataset when available (train/inference parity).
-    # Fall back to the unified (full-image) dataset otherwise. use_subset
-    # (M3-local profile) requires the stratified subset from
-    # `pixi run subset-stage1`.
-    subset_yaml = settings.paths.stage1_sliced_subset_dir / "dataset.yaml"
-    sliced_yaml = settings.paths.stage1_sliced_dir / "dataset.yaml"
-    unified_yaml = settings.paths.unified_dir / "dataset.yaml"
-
-    # --- Golden polish: build the 3x-oversampled dataset copy ---
-    # Polish calibrates box regression on Dungeon Meshi annotations, so it
-    # oversamples the FULL sliced dataset — not the M3-local subset.
-    polish_yaml = None
-    if args.polish:
-        if stage1.use_subset:
-            logger.error(
-                "--polish oversamples the full sliced dataset (%s); set "
-                "training.stage1.use_subset=false.",
-                sliced_yaml,
-            )
-            sys.exit(2)
-        if not sliced_yaml.exists():
-            logger.error(
-                "--polish requires the sliced dataset at %s. Run 'pixi run unify-stage1' first.",
-                sliced_yaml,
-            )
+    # --- Resolve training dataset ---
+    # Priority:
+    # 1. Explicit --dataset CLI argument (file or directory).
+    # 2. Stratified subset (when stage1.use_subset=true, M3 local profile).
+    # 3. Sliced dataset at settings.paths.stage1_sliced_dir (SAHI parity).
+    # 4. v2 Sliced dataset at <paths.data>/training/stage1_v2_sliced.
+    # 5. Full unified dataset at settings.paths.unified_dir.
+    if args.dataset is not None:
+        explicit_ds = Path(args.dataset).resolve()
+        if explicit_ds.is_dir():
+            dataset_yaml = explicit_ds / "dataset.yaml"
+            dataset_dir = explicit_ds
+        elif explicit_ds.is_file():
+            dataset_yaml = explicit_ds
+            dataset_dir = explicit_ds.parent
+        else:
+            logger.error("Explicit --dataset path not found: %s", args.dataset)
             sys.exit(1)
-        polish_dir = settings.paths.stage1_sliced_dir.with_name(
-            settings.paths.stage1_sliced_dir.name + "_polish"
-        )
-        polish_stats = _build_polish_dataset(
-            settings.paths.stage1_sliced_dir, polish_dir, rebuild=args.polish_rebuild
-        )
-        logger.info("Polish dataset ready: %s", polish_stats)
-        polish_yaml = polish_dir / "dataset.yaml"
 
-    if polish_yaml is not None:
-        dataset_yaml = polish_yaml
+        if not dataset_yaml.exists():
+            logger.error("No dataset.yaml found at %s", dataset_yaml)
+            sys.exit(1)
     elif stage1.use_subset:
+        subset_yaml = settings.paths.stage1_sliced_subset_dir / "dataset.yaml"
         if not subset_yaml.exists():
             logger.error(
                 "use_subset=true but %s not found. Run 'pixi run subset-stage1' first.",
@@ -565,17 +560,46 @@ def main() -> None:
             )
             sys.exit(1)
         dataset_yaml = subset_yaml
-    elif sliced_yaml.exists():
-        dataset_yaml = sliced_yaml
-    elif unified_yaml.exists():
-        dataset_yaml = unified_yaml
+        dataset_dir = settings.paths.stage1_sliced_subset_dir
+    elif (settings.paths.stage1_sliced_dir / "dataset.yaml").exists():
+        dataset_yaml = settings.paths.stage1_sliced_dir / "dataset.yaml"
+        dataset_dir = settings.paths.stage1_sliced_dir
     else:
-        logger.error(
-            "No dataset.yaml found at %s or %s. "
-            "Run 'python scripts/unify/stage1.py --slice' to generate it.",
-            settings.paths.stage1_sliced_dir, settings.paths.unified_dir,
+        v2_sliced_yaml = settings.paths.stage1_sliced_dir.parent / "stage1_v2_sliced" / "dataset.yaml"
+        unified_yaml = settings.paths.unified_dir / "dataset.yaml"
+        if v2_sliced_yaml.exists():
+            dataset_yaml = v2_sliced_yaml
+            dataset_dir = v2_sliced_yaml.parent
+            logger.info("Discovered Stage 1 v2 sliced dataset at %s", dataset_yaml)
+        elif unified_yaml.exists():
+            dataset_yaml = unified_yaml
+            dataset_dir = settings.paths.unified_dir
+        else:
+            logger.error(
+                "No dataset.yaml found at %s, %s, or %s. "
+                "Run 'python scripts/unify/stage1.py --slice' to generate it.",
+                settings.paths.stage1_sliced_dir,
+                v2_sliced_yaml.parent,
+                settings.paths.unified_dir,
+            )
+            sys.exit(1)
+
+    # --- Golden polish: build the 3x-oversampled dataset copy ---
+    # Polish calibrates box regression on Dungeon Meshi annotations, so it
+    # oversamples the full sliced dataset — not the M3-local subset.
+    if args.polish:
+        if not dataset_yaml.exists():
+            logger.error(
+                "--polish requires the sliced dataset at %s. Run 'pixi run unify-stage1' first.",
+                dataset_yaml,
+            )
+            sys.exit(1)
+        polish_dir = dataset_dir.with_name(dataset_dir.name + "_polish")
+        polish_stats = _build_polish_dataset(
+            dataset_dir, polish_dir, rebuild=args.polish_rebuild
         )
-        sys.exit(1)
+        logger.info("Polish dataset ready: %s", polish_stats)
+        dataset_yaml = polish_dir / "dataset.yaml"
 
     # --- Determine model source ---
     # Normalize via Path() to collapse double slashes (config has a trailing
