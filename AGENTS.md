@@ -104,6 +104,11 @@ Catnip is a two-stage manga character detection and re-identification pipeline d
 * **Symptom:** `scripts/colab/remote_runner.py` extracting `compressed/stage1_v2_sliced.tar` puts the dataset in `/content/catnip-data-local/training/stage1_v2_sliced`, but `stage1.py` historically looked only for `training/stage1_sliced` or `training/stage1`, exiting with code 1 (`No dataset.yaml found at /content/catnip-data-local/training/stage1_sliced or /content/catnip-data-local/training/stage1`).
 * **Fix:** `stage1.py` now supports `--dataset <path>` directly and auto-discovers `stage1_v2_sliced` if `stage1_sliced` is absent. `remote_runner.py` forwards `--dataset` and `--override paths.stage1_sliced_dir={dataset_dir}` to both phase 1 and golden polish.
 
+### Gotcha 16: MuSGD cuBLAS Strided Batched GEMM Incompatibility & L4 Batch Sizing
+* **Symptom:** During step 5 of epoch 1 on CUDA, training crashes with `RuntimeError: CUDA error: CUBLAS_STATUS_NOT_SUPPORTED when calling cublasGemmStridedBatchedEx(..., CUDA_R_16BF, ...)`. Separately, `batch=48` triggers `WARNING ⚠️ CUDA out of memory with batch=48. Reducing to batch=24 and retrying`.
+* **Root Cause:** In Ultralytics `muon.py`, `zeropower_via_newtonschulz5` casts tensors to `bfloat16` and executes `torch.baddbmm` on non-contiguous transposed tensors, which modern cuBLAS on Ada Lovelace (L4) rejects with status not supported. Furthermore, `yolo26m` (~20M params at `imgsz=640` with 306 max detections) requires ~21.8 GB VRAM at `batch=24`, exceeding 24 GB capacity if initialized at `batch=48`.
+* **Fix:** Use `optimizer: AdamW` in `config/pipeline.yaml` (uses PyTorch's native `fused=True` CUDA kernels, matching `lr0=0.001` and `weight_decay=0.002`). `stage1.py` additionally patches `zeropower_via_newtonschulz5` with float32 contiguous layout as defense-in-depth, and `batch` is pinned to `24` on L4.
+
 ---
 
 ## 4. Storage & Data Conventions

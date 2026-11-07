@@ -622,3 +622,16 @@ def test_autodiscover_stage1_v2_sliced_fallback(
         stage1.main()
     assert Path(exc.value.data_arg).resolve() == v2_yaml.resolve()
 
+
+def test_patch_musgd_cublas_execution() -> None:
+    import torch
+    import ultralytics.optim.muon as muon_mod
+    stage1._patch_musgd_cublas()
+    # Test 2D, transposed 2D, and 3D
+    for shape in [(32, 16), (16, 32), (4, 16, 16)]:
+        t = torch.randn(*shape)
+        out = muon_mod.zeropower_via_newtonschulz5(t)
+        assert out.shape == t.shape
+        assert out.dtype == t.dtype
+
+

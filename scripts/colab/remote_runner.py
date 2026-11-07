@@ -32,7 +32,7 @@ from pathlib import Path
 STAGE1_BASE_MODEL_KEY = os.environ.get("CATNIP_STAGE1_BASE_MODEL_KEY", "models/yolo26m.pt")
 STAGE1_RUN_NAME = os.environ.get("CATNIP_STAGE1_RUN_NAME", "stage1_v2")
 STAGE1_EPOCHS = os.environ.get("CATNIP_STAGE1_EPOCHS", "75")
-STAGE1_BATCH = os.environ.get("CATNIP_STAGE1_BATCH", "48")
+STAGE1_BATCH = os.environ.get("CATNIP_STAGE1_BATCH", "24")
 STAGE1_DEVICE = os.environ.get("CATNIP_STAGE1_DEVICE", "cuda")
 STAGE1_WORKERS = os.environ.get("CATNIP_STAGE1_WORKERS", "8")
 POLISH_ENABLED = os.environ.get("CATNIP_POLISH", "1") != "0"

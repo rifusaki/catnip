@@ -126,7 +126,7 @@ training:
     imgsz: 640
     epochs: 75            # v2 budget on L4 (~6-7.5 min/epoch, mosaic-heavy)
     patience: 15
-    batch: 48             # ~15.5 GB VRAM on L4 (24 GB); OOM ladder 32->16->8->4->2
+    batch: 24             # ~21.5 GB VRAM on L4 (24 GB); OOM ladder 16->8->4->2
     workers: 8  # dataloader workers (L4: 8, M3: 4, T4: 2-4)
     device: cuda    # primary v2 training on Colab L4; m3 pixi task pins mps
     freeze: 0   # unfreeze backbone for manga line-art domain adaptation
@@ -150,10 +150,10 @@ training:
     random_grayscale: 0.25
     plots: false         # reduce epoch-end peak RAM and save wall clock
     save_period: 3       # save periodic checkpoints for post-run re-ranking
-    # Explicit optimizer for CUDA paths (Colab/Lightning/Vast/RunPod).
-    # `auto` ignores manual lr0; explicit MuSGD makes lr0 effective.
-    # stage1.py forces AdamW on MPS (MuSGD bf16 type-cast issues).
-    optimizer: MuSGD
+    # Explicit optimizer: `auto` ignores manual lr0; explicit AdamW makes
+    # lr0 effective, uses fast native fused CUDA kernels, and avoids MuSGD's
+    # bfloat16 cuBLAS batched GEMM incompatibilities on modern CUDA and MPS.
+    optimizer: AdamW
     # v2 run/artifact names keep yolo26m deliverables separate from the v1
     # nano weights runs. Empty strings restore historical naming; the m3 pixi
     # task overrides these to empty so the M3 chain keeps writing to

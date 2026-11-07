@@ -120,6 +120,51 @@ def _patch_mps_workers(workers: int) -> None:
     _mps_workers_patched = True
 
 
+_musgd_patched = False
+
+
+def _patch_musgd_cublas() -> None:
+    """Patch ultralytics.optim.muon.zeropower_via_newtonschulz5 for cuBLAS compatibility.
+
+    The upstream zeropower_via_newtonschulz5 implementation transposes tensors and
+    calls `torch.baddbmm` in bfloat16 (`CUDA_R_16BF`). On certain CUDA / PyTorch
+    environments (e.g. Ada Lovelace L4 on modern CUDA), cuBLAS rejects strided
+    batched GEMM with non-contiguous bfloat16 layouts, crashing with:
+    `CUBLAS_STATUS_NOT_SUPPORTED when calling cublasGemmStridedBatchedEx`.
+    Computing in float32 with contiguous memory layout eliminates the crash while
+    preserving exact mathematical Newton-Schulz convergence.
+    """
+    global _musgd_patched
+    if _musgd_patched:
+        return
+
+    try:
+        from ultralytics.optim import muon as muon_module
+
+        def safe_zeropower_via_newtonschulz5(G: torch.Tensor, eps: float = 1e-7) -> torch.Tensor:
+            assert G.ndim in {2, 3}
+            # Use float32 and ensure contiguous layout before baddbmm
+            X = G.reshape(-1, G.size(-2), G.size(-1)).float()
+            X /= X.norm(dim=(-2, -1), keepdim=True) + eps
+            transposed = G.size(-2) > G.size(-1)
+            if transposed:
+                X = X.transpose(-2, -1).contiguous()
+            a, b, c = 3.4445, -4.7750, 2.0315
+            for _ in range(5):
+                A = (X @ X.transpose(-2, -1)).contiguous()
+                B = torch.baddbmm(A, A, A, beta=b, alpha=c)
+                X = torch.baddbmm(X, B, X, beta=a)
+            if transposed:
+                X = X.transpose(-2, -1).contiguous()
+            return X.reshape(G.shape).to(G.dtype)
+
+        muon_module.zeropower_via_newtonschulz5 = safe_zeropower_via_newtonschulz5
+        _musgd_patched = True
+        logger.info("MuSGD cuBLAS compatibility patch installed (float32 contiguous Newton-Schulz).")
+    except Exception as e:
+        logger.warning("Could not patch MuSGD zeropower_via_newtonschulz5: %s", e)
+
+
 def _setup_logging(verbose: bool = False) -> None:
     """Configure logging with levels and formatting."""
     level = logging.DEBUG if verbose else logging.INFO
@@ -680,7 +725,7 @@ def main() -> None:
                 "exist_ok": True,
                 "amp": False if str(stage1.device).lower() == "mps" else True,
                 # Explicit optimizer: `auto` ignores manual lr0 (config sets
-                # MuSGD for CUDA paths; MPS override below re-forces AdamW).
+                # AdamW; MPS override below re-forces AdamW).
                 "optimizer": stage1.optimizer,
                 "deterministic": stage1.deterministic,
             }
@@ -690,6 +735,8 @@ def main() -> None:
             # Force AdamW on MPS to avoid MuSGD bf16 type casting issues
             if str(stage1.device).lower() == "mps":
                 train_kwargs["optimizer"] = "AdamW"
+            elif str(train_kwargs.get("optimizer", "")).lower() == "musgd":
+                _patch_musgd_cublas()
 
             # Chain resume (m3_chain.sh / remote runner): ultralytics
             # restores ALL args + optimizer state from the checkpoint, so
