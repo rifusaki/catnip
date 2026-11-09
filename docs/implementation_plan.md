@@ -1,7 +1,7 @@
 ---
 status: in-progress
-phase: 3
-updated: 2026-11-06
+phase: 4
+updated: 2026-11-08
 ---
 
 # Catnip Next-Gen Implementation Plan & Engineering Handoff
@@ -42,12 +42,25 @@ Upgrade Catnip Stage 1 to **97–98%+ precision** across both monochrome manga p
 - [x] 3.1 Add teacher model catalog entries (`deepghs_head_x`, `deepghs_face_s`, `deepghs_person_s`, `zymk9_face`) and downloader support in `src/eval/adapters.py` *(code complete: catalog + `get_detector` target validation incl. "body")*
 - [x] 3.2 Implement `src/preprocess/box_calibration.py` to fit the 4-parameter linear box-regression adapter $(\Delta x_c, \Delta y_c, s_w, s_h)$ on `Manga109` + `izutsumi` `(pred_face, gt_head) -> gt_face` pairs *(complete: Huber IRLS fit + validation quality floor + `--target-section calibrate` driver. **2026-11-06: fitted on real data locally (MPS)** — 10,884 pairs from 1,754 pages, `FaceBoxAdapter(α_x=-0.0096, α_y=+0.0238, β_w=0.9433, β_h=0.9313)`, validation recall@IoU0.75 0.455 → 0.523; serialized to `config/face_box_adapter.json`)*
 - [x] 3.3 Implement `scripts/unify/pseudo_label.py` to generate geometrically verified `head` labels on `data/staging/manga109` and `body` + calibrated `face` labels on `data/staging/{ah_yolo,ah_coco}`, filtering out disembodied headshot-only crops without torsos *(code complete: Rule A/B + IoS verification, enriched output tree — inputs never mutated, rerun-converging writer, deterministic 10% headshot draw)*
-- [x] 3.4 Re-run `pixi run unify-stage1` (`scripts/unify/stage1.py --slice`) on the fully 3-class annotated staging directories and archive `compressed/stage1_v2_sliced.tar` to Cloudflare R2 (`s3://catnip-canonical/`) *(**COMPLETE 2026-11-06, local MPS run**: full chain via `runs/v2-pipeline/pipeline_v2.sh` — manga109 10,071/10,071 enriched (**90,872 verified heads**), ah_yolo 65,191→55,731 kept (**136,273 bodies + 161,348 calibrated faces**; 10,478 headshot-only, 10% draw kept 1,018), ah_coco 8,157→7,816 kept (**18,961 bodies + 18,052 faces**), izutsumi passthrough 75; unify 80/10/10 seed 42 → **train 123,925 / val 15,945 / test 15,021 slices** (73,693 originals); enriched label totals **body 312,608 · head 332,343 · face 298,164**; archive 13,860,086,272 bytes published in R2 as 46 × ~290 MB `.part_*` objects — wrangler's 300 MiB cap — byte-sum verified against the SSD, runner reconstructs on Colab. Face adapter fitted the same day: `config/face_box_adapter.json`, 10,884 pairs, recall@IoU0.75 0.455 → 0.523.)*
+- [x] 3.4 Re-run `pixi run unify-stage1` (`scripts/unify/stage1.py --slice`) on the fully 3-class annotated staging directories and archive `compressed/stage1_v2_sliced.tar` to Cloudflare R2 (`s3://catnip-canonical/`) *(**COMPLETE 2026-11-06, local MPS run; UPDATED 2026-11-07 with Izutsumi head/face remap + AnimeHeads torso geometry**):
+  - Izutsumi Label Remap: Original 242 `class 2: face` remapped to `class 1: head` (median area 0.053); 204 tight `class 2: face` synthesized via `FaceBoxAdapter` + `deepghs_face_s`/`zymk9_face` ensemble.
+  - AnimeHeads Torso Guard: Pruned whole-canvas boxes and enforced downward torso extension below chin (`torso_ext >= 0.35 * head_h`, `body_h >= 1.35 * head_h`). Correctly identified and downsampled 19,678 headshot crops.
+  - Final Unified + Sliced Count: **54,015 images** → **135,213 slices** (`train`: 108,207, `val`: 13,481, `test`: 13,525), **1,340,555 annotations** across `body`, `head`, and `face`.
+  - Unified Archive: 12.3 GB `compressed/stage1_v2_sliced.tar` uploaded to R2 via `rclone`.
+  - Ground Truth Gallery: 40-sample interactive gallery (32 slices + 8 full pages) generated and published in `docs/gt_gallery/` (`pixi run visualize-gt`).)*
 
-## Phase 4: Stage 1 v2 Training on Colab Pro L4 (`yolo26m` + Color Bridging) [CODE COMPLETE — EXECUTION PENDING]
+## Phase 4: Stage 1 v2 Training on Colab Pro L4 (`yolo26m` + Color Bridging) [IN PROGRESS]
 - [x] 4.1 Update `config/pipeline.yaml` and `scripts/train/stage1.py` for `yolo26m.pt` (`batch=48`, `imgsz=640`, `cls_pw=1.0`, `hsv_h=0.015`, `hsv_s=0.5`, `hsv_v=0.4`, `close_mosaic=12`) and inject `RandomGrayscale(p=0.25)` + scan-contrast jitter into the Ultralytics training transform pipeline *(code complete: `YOLODataset.build_transforms` wrap, process-local patched-once; golden polish `--polish` with 3× izutsumi oversampled dataset; v1 M3 profile fully pinned on the pixi task; remote runner v2 env knobs + two-phase flow)*
-- [ ] 4.2 Execute Phase 1 training (70 epochs on full 3-class sliced dataset) and Phase 2 golden polish (10 epochs at `lr0=1e-4` with `3×` oversampled `izutsumi` slices) on Colab Pro L4 via `scripts/colab/launch_360.sh`, delivering `models/yolo26m_stage1_v2.pt` ← Fix applied (2026-11-07): `stage1.py` dataset resolution patched with `--dataset` CLI argument and auto-discovery of `stage1_v2_sliced`; `remote_runner.py` forwards paths; R2 archive consolidation notebook created at `notebooks/catnipConsolidateR2Tar.ipynb` to unify split parts. Ready to launch from 360 WSL.
-- [ ] 4.3 Benchmark `yolo26m_stage1_v2.pt` on the 16k test split and held-out *Dungeon Meshi* manga panels + colored fanart to verify $\ge 97\text{–}98\%$ precision across all 3 classes and both domains ← OPERATIONAL
+- [🔄] 4.2 Execute Phase 1 training (70 epochs on full 3-class sliced dataset) and Phase 2 golden polish (10 epochs at `lr0=1e-4` with `3×` oversampled `izutsumi` slices) on Colab Pro L4 via `scripts/colab/launch_360.sh`, delivering `models/yolo26m_stage1_v2.pt` ← **IN PROGRESS (2026-11-08)**:
+  - Launched under autonomous 24/7 self-healing supervisor (`/root/catnip/supervisor.sh`) on `rifu360`. Automatically detects stale logs/disconnected Colab runtimes, clears hung wrappers, and resumes from R2 `runs/stage1_v2-last.pt`.
+  - Current Status: **Epoch 25/75 (iteration ~3283/4509, ~73%)**. Throughput: **2.4 it/s** on Colab L4 (14.4 GB VRAM).
+  - Validation Progress (13,481 val slices / 135,284 instances, all 3 classes):
+    - Epoch 1: mAP50 0.852, mAP50-95 0.563
+    - Epoch 3: mAP50 0.899, mAP50-95 0.635
+    - Epoch 11: mAP50 0.931, mAP50-95 0.696
+    - Epoch 24: **mAP50 0.936, mAP50-95 0.709, Precision 0.882, Recall 0.889**
+  - Checkpoint: Rolling checkpoint pushed to `s3://catnip-canonical/runs/stage1_v2-last.pt`.
+- [ ] 4.3 Benchmark `yolo26m_stage1_v2.pt` on the 16k test split and held-out *Dungeon Meshi* manga panels + colored fanart to verify $\ge 97\text{–}98\%$ precision across all 3 classes and both domains ← OPERATIONAL (awaiting completion of 4.2)
 
 ## Phase 5: Stage 2 Semi-Supervised Multi-Prototype Clustering (`src/reid/`) [CODE COMPLETE — TRAINING PENDING]
 - [x] 5.1 Implement `src/reid/model.py` with a domain-pretrained character embedding backbone (`deepghs/ccip` or `DINOv2-ViT-S/14` / `ConvNeXt-Small` + `GeM` pooling $\rightarrow$ L2-normalized embedding) and multi-granularity instance fusion (`[face, head, body]`) *(code complete: ConvNeXt default + DINOv2 lazy hub; CCIP explicitly `NotImplementedError`; fusion renormalized over present parts)*

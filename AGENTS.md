@@ -31,6 +31,7 @@ Catnip is a two-stage manga character detection and re-identification pipeline d
 | Spot VM Bootstrap | `scripts/train/spot_bootstrap.sh` | ✅ **Fully working.** Auto-bootstrap for Vast.ai / RunPod RTX 4090 instances. |
 | SAHI Inference | `src/detection/sahi_extractor.py` | ✅ **Working.** SAHI wrapper using Non-Maximum Merging (NMM). |
 | Stage 1 Deliverable | `models/yolo26_stage1_body_head_face_m3.pt` | ✅ **Trained.** Achieved mAP50 0.696 on 16k full test split. |
+| Stage 1 v2 Model (yolo26m) | `models/yolo26m_stage1_v2.pt` | 🔄 **Training actively on Colab L4 (2026-11-08).** Reached Epoch 25/75, mAP50 0.936, mAP50-95 0.709, P 0.882, R 0.889. Monitored by auto-recovering watchdog on 360 WSL. |
 | Model Benchmarks | `src/eval/`, `scripts/eval/benchmark_faces.py` | ✅ **Fully working.** Multi-model comparative benchmark for faces and heads (Catnip vs Fuyucchi, zymk9, DeepGHS). |
 | Remote Eval Runner | `scripts/colab/remote_eval_runner.py`, `launch_eval_360.sh` | ✅ **Fully working.** Automated headless evaluation runner driven via 360 WSL / Colab CLI syncing artifacts to R2. v2 knobs: `CATNIP_EVAL_MODEL_KEY`, `CATNIP_EVAL_RESULTS_PREFIX`, `CATNIP_REPO_BRANCH` (defaults keep the v1 flow). |
 | Presentation Notebook | `notebooks/catnipBenchmarkPresentation.ipynb` | ✅ **Fully working.** Light Mode presentation notebook with live 16k test metrics, domain breakdowns, and visual galleries. |
@@ -109,6 +110,11 @@ Catnip is a two-stage manga character detection and re-identification pipeline d
 * **Root Cause:** In Ultralytics `muon.py`, `zeropower_via_newtonschulz5` casts tensors to `bfloat16` and executes `torch.baddbmm` on non-contiguous transposed tensors, which modern cuBLAS on Ada Lovelace (L4) rejects with status not supported. Furthermore, `yolo26m` (~20M params at `imgsz=640` with 306 max detections) requires ~21.8 GB VRAM at `batch=24`, exceeding 24 GB capacity if initialized at `batch=48`.
 * **Fix:** Use `optimizer: AdamW` in `config/pipeline.yaml` (uses PyTorch's native `fused=True` CUDA kernels, matching `lr0=0.001` and `weight_decay=0.002`). `stage1.py` additionally patches `zeropower_via_newtonschulz5` with float32 contiguous layout as defense-in-depth, and `batch` is pinned to `24` on L4.
 
+### Gotcha 17: Colab CLI Hang on Remote Reclamation & Autonomous Supervisor Watchdog
+* **Symptom:** When Google Colab reclaims an L4 runtime during long runs, the local `colab exec -s <name> --timeout 86400` process does not cleanly exit on remote socket loss; it remains resident indefinitely in `pts` waiting on EOF. Because the process never terminates, wrapper scripts never trigger post-run logic, and monitoring stops receiving stream updates while appearing "alive" in `tmux`.
+* **Root Cause:** `colab-cli` lacks transport-level TCP keepalive/heartbeat timeouts on headless WebSocket/HTTPS streaming RPCs. Furthermore, polling via periodic LLM turns (e.g. Paseo schedule) without active remediation permissions results in passive diagnosis ("Want me to restart?") without self-healing, quickly burning LLM rate limits.
+* **Fix:** Deploy a deterministic 24/7 bash watchdog (`/root/catnip/supervisor.sh`) on `rifu360`. It probes every 60s: (1) checks `colab sessions` liveness, (2) checks `training.log` modification time against a 15-minute staleness threshold (`DIFF > 900s`). If dead or hung, it automatically kills the stale `colab exec` PID, stops the orphaned session, and calls `scripts/colab/launch_360.sh`, which seamlessly auto-resumes from `s3://catnip-canonical/runs/stage1_v2-last.pt`. Tested and recovered multiple disconnects overnight (Epochs 4→11→25).
+
 ---
 
 ## 4. Storage & Data Conventions
@@ -118,6 +124,9 @@ Catnip is a two-stage manga character detection and re-identification pipeline d
 - **Tarball for Cloud Instances:** `compressed/stage1_sliced.tar` (~14 GB) contains the pre-sliced v1 training dataset for instant hydration on remote VMs.
 - **v2 Dataset (2026-11-06):** `compressed/stage1_v2_sliced.tar` (13 GB, 46 × ~290 MB `.part_*` objects in R2 — the runner reconstructs them) holds the fully 3-class enriched + re-sliced dataset; local copies on the SSD at `training/stage1_v2_sliced/` and `compressed/stage1_v2_sliced.tar(.part_*)`.
 - **v2 Enriched Staging:** `data/staging_enriched/{izutsumi,manga109,ah_yolo,ah_coco}` on the SSD — per-source enriched trees (symlinked images, original + synthetic labels, `manifest.json` per source). Pristine `data/staging/` was never mutated and stays the source of truth for reruns.
+- **Izutsumi Label Remap & Face Calibration (2026-11-07):** Label Studio annotations previously labeled heads as `class 2: face`. Mapped all 242 original boxes to `class 1: head` and synthesized 204 tight `class 2: face` boxes via `deepghs_face_s` + `zymk9_face` + `FaceBoxAdapter`.
+- **AnimeHeads Torso Geometry & Headshot Pruning (2026-11-07):** Pruned whole-canvas body bounding boxes (`(w >= 0.92 and h >= 0.92) or area >= 0.82`) and enforced true downward torso extension below the chin (`(body.y2 - head.y2) >= 0.35 * head_h` and `body_h >= 1.35 * head_h`), enabling 19,678 headshot crops to be correctly identified and downsampled.
+- **Ground Truth Gallery:** Expanded 2× to 40 interactive samples across all four sources (32 slices + 8 full pages) committed in `docs/gt_gallery/` (`pixi run visualize-gt`).
 - **Face Box Adapter:** `config/face_box_adapter.json` (committed) — fitted from 10,884 aligned pairs (izutsumi + strided 2,000-page manga109 sample), held-out recall@IoU0.75 0.455 → 0.523.
 - **Base Weights:** `models/yolo26n.pt` (v1) and `models/yolo26m.pt` (v2, uploaded to R2 2026-11-06, md5-verified) exist on the SSD and in R2 for fresh Colab starts.
 - **Rolling Checkpoints:** Remote runners push `runs/detect/<run>/weights/last.pt` to `s3://catnip-canonical/runs/<run>-last.pt` every 10 minutes. Training resumes seamlessly if interrupted.
