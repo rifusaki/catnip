@@ -51,14 +51,18 @@ Upgrade Catnip Stage 1 to **97–98%+ precision** across both monochrome manga p
 
 ## Phase 4: Stage 1 v2 Training on Colab Pro L4 (`yolo26m` + Color Bridging) [IN PROGRESS]
 - [x] 4.1 Update `config/pipeline.yaml` and `scripts/train/stage1.py` for `yolo26m.pt` (`batch=48`, `imgsz=640`, `cls_pw=1.0`, `hsv_h=0.015`, `hsv_s=0.5`, `hsv_v=0.4`, `close_mosaic=12`) and inject `RandomGrayscale(p=0.25)` + scan-contrast jitter into the Ultralytics training transform pipeline *(code complete: `YOLODataset.build_transforms` wrap, process-local patched-once; golden polish `--polish` with 3× izutsumi oversampled dataset; v1 M3 profile fully pinned on the pixi task; remote runner v2 env knobs + two-phase flow)*
-- [🔄] 4.2 Execute Phase 1 training (70 epochs on full 3-class sliced dataset) and Phase 2 golden polish (10 epochs at `lr0=1e-4` with `3×` oversampled `izutsumi` slices) on Colab Pro L4 via `scripts/colab/launch_360.sh`, delivering `models/yolo26m_stage1_v2.pt` ← **IN PROGRESS (2026-11-08)**:
+- [🔄] 4.2 Execute Phase 1 training (75 epochs on full 3-class sliced dataset) on Colab Pro L4 via `scripts/colab/launch_360.sh`, delivering `models/yolo26m_stage1_v2.pt` directly from Phase 1 `best.pt` ← **IN PROGRESS (2026-11-10)**:
+  - **Architectural Decision (2026-11-10):** Phase 2 golden polish (Izutsumi oversampling) has been **disabled** (`CATNIP_POLISH=0`). Stage 1 is strictly a class-agnostic anatomical detector (`0: body`, `1: head`, `2: face`). Oversampling Izutsumi risks art-style/character bias and weakens Stage 2's Same-Panel Cannot-Link negative constraints (Stage 1 must detect all characters equally).
   - Launched under autonomous 24/7 self-healing supervisor (`/root/catnip/supervisor.sh`) on `rifu360`. Automatically detects stale logs/disconnected Colab runtimes, clears hung wrappers, and resumes from R2 `runs/stage1_v2-last.pt`.
-  - Current Status: **Epoch 25/75 (iteration ~3283/4509, ~73%)**. Throughput: **2.4 it/s** on Colab L4 (14.4 GB VRAM).
+  - Current Status: **Epoch 67/75 (closing mosaic active)**. Throughput: **2.4 it/s** on Colab L4 (13.5 GB VRAM).
   - Validation Progress (13,481 val slices / 135,284 instances, all 3 classes):
     - Epoch 1: mAP50 0.852, mAP50-95 0.563
     - Epoch 3: mAP50 0.899, mAP50-95 0.635
     - Epoch 11: mAP50 0.931, mAP50-95 0.696
-    - Epoch 24: **mAP50 0.936, mAP50-95 0.709, Precision 0.882, Recall 0.889**
+    - Epoch 25: mAP50 0.937, mAP50-95 0.710, Precision 0.882, Recall 0.890
+    - Epoch 43: mAP50 0.942, mAP50-95 0.723, Precision 0.888, Recall 0.895
+    - Epoch 66: **mAP50 0.944, mAP50-95 0.729, Precision 0.891, Recall 0.899**
+  - Deliverable: Upon completion of Epoch 75, Phase 1 `best.pt` ships directly as `models/yolo26m_stage1_v2.pt` to R2.
   - Checkpoint: Rolling checkpoint pushed to `s3://catnip-canonical/runs/stage1_v2-last.pt`.
 - [ ] 4.3 Benchmark `yolo26m_stage1_v2.pt` on the 16k test split and held-out *Dungeon Meshi* manga panels + colored fanart to verify $\ge 97\text{–}98\%$ precision across all 3 classes and both domains ← OPERATIONAL (awaiting completion of 4.2)
 

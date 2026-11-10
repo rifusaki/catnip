@@ -35,7 +35,7 @@ STAGE1_EPOCHS = os.environ.get("CATNIP_STAGE1_EPOCHS", "75")
 STAGE1_BATCH = os.environ.get("CATNIP_STAGE1_BATCH", "24")
 STAGE1_DEVICE = os.environ.get("CATNIP_STAGE1_DEVICE", "cuda")
 STAGE1_WORKERS = os.environ.get("CATNIP_STAGE1_WORKERS", "8")
-POLISH_ENABLED = os.environ.get("CATNIP_POLISH", "1") != "0"
+POLISH_ENABLED = os.environ.get("CATNIP_POLISH", "0") == "1"
 POLISH_EPOCHS = os.environ.get("CATNIP_POLISH_EPOCHS", "10")
 STAGE1_ARTIFACT = os.environ.get("CATNIP_STAGE1_ARTIFACT", "yolo26m_stage1_v2.pt")
 # Sliced-dataset archive key: the v2 profile needs the 3-class enriched
