@@ -22,7 +22,9 @@ R2_ENDPOINT = os.environ.get(
 BUCKET = os.environ.get("BUCKET", "catnip-canonical")
 R2_ACCESS_KEY_ID = os.environ.get("R2_ACCESS_KEY_ID")
 R2_SECRET_ACCESS_KEY = os.environ.get("R2_SECRET_ACCESS_KEY")
-DATASET_ARCHIVE_KEY = "compressed/stage1_sliced.tar"
+DATASET_ARCHIVE_KEY = os.environ.get(
+    "CATNIP_EVAL_DATASET_KEY", "compressed/stage1_v2_sliced.tar"
+)
 EVAL_SAMPLE = os.environ.get("CATNIP_EVAL_SAMPLE", "0")
 EVAL_DEVICE = os.environ.get("CATNIP_EVAL_DEVICE", "cuda")
 # v2 knobs (defaults keep the classic v1 benchmark flow: the fixed harness
@@ -119,14 +121,22 @@ LOCAL_DATA_ROOT = Path("/content/catnip-data-local")
 (LOCAL_DATA_ROOT / "models").mkdir(parents=True, exist_ok=True)
 os.environ["CATNIP_DATA"] = str(LOCAL_DATA_ROOT)
 
-dataset_yaml = LOCAL_DATA_ROOT / "training" / "stage1_sliced" / "dataset.yaml"
-if not dataset_yaml.exists():
+# Auto-detect existing dataset on disk (e.g. from preceding training run)
+dataset_yaml = None
+for cand in ("stage1_v2_sliced", "stage1_sliced"):
+    cand_yaml = LOCAL_DATA_ROOT / "training" / cand / "dataset.yaml"
+    if cand_yaml.exists():
+        dataset_yaml = cand_yaml
+        print(f"[RemoteEval] Reusing existing dataset on disk at {dataset_yaml}")
+        break
+
+if dataset_yaml is None:
     free_gb = shutil.disk_usage("/content").free / 1e9
     print(f"[RemoteEval] /content free disk: {free_gb:.1f} GB")
     assert free_gb >= 35.0, f"Insufficient disk: {free_gb:.1f} GB < 35 GB required."
 
-    tar_path = Path("/content/stage1_sliced.tar")
-    print(f"[RemoteEval] Downloading dataset archive {DATASET_ARCHIVE_KEY} from R2 (14 GB)...")
+    tar_path = Path("/content/stage1_eval_dataset.tar")
+    print(f"[RemoteEval] Downloading dataset archive {DATASET_ARCHIVE_KEY} from R2...")
     try:
         s3.download_file(BUCKET, DATASET_ARCHIVE_KEY, str(tar_path))
     except Exception as err:
@@ -140,9 +150,15 @@ if not dataset_yaml.exists():
         tar_path.unlink()
     print("[RemoteEval] Dataset extracted and archive cleaned up.")
 
-assert dataset_yaml.exists(), f"Extraction error: {dataset_yaml} does not exist."
+    for cand in ("stage1_v2_sliced", "stage1_sliced"):
+        cand_yaml = LOCAL_DATA_ROOT / "training" / cand / "dataset.yaml"
+        if cand_yaml.exists():
+            dataset_yaml = cand_yaml
+            break
 
-trained_model = LOCAL_DATA_ROOT / "models" / "yolo26_stage1_body_head_face.pt"
+assert dataset_yaml is not None and dataset_yaml.exists(), f"Extraction error: no dataset.yaml found."
+
+trained_model = LOCAL_DATA_ROOT / "models" / Path(TRAINED_MODEL_KEY).name
 if not trained_model.exists():
     print(f"[RemoteEval] Downloading trained model {TRAINED_MODEL_KEY} from R2...")
     try:
