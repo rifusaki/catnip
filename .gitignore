@@ -1,8 +1,10 @@
 # pixi environments
 .pixi
 
-# data
+# data & models
 data/*
+models/
+*.pt
 .DS_Store
 yolov8x6_animeface.pt
 __pycache__

@@ -30,8 +30,8 @@ Catnip is a two-stage manga character detection and re-identification pipeline d
 | Colab Headless Runner | `scripts/colab/launch_360.sh` | ✅ **Fully working.** 24/7 background runner driven by home server (`360 WSL`). |
 | Spot VM Bootstrap | `scripts/train/spot_bootstrap.sh` | ✅ **Fully working.** Auto-bootstrap for Vast.ai / RunPod RTX 4090 instances. |
 | SAHI Inference | `src/detection/sahi_extractor.py` | ✅ **Working.** SAHI wrapper using Non-Maximum Merging (NMM). |
-| Stage 1 Deliverable | `models/yolo26_stage1_body_head_face_m3.pt` | ✅ **Trained.** Achieved mAP50 0.696 on 16k full test split. |
-| Stage 1 v2 Model (yolo26m) | `models/yolo26m_stage1_v2.pt` | 🔄 **Training actively on Colab L4 (2026-11-08).** Reached Epoch 25/75, mAP50 0.936, mAP50-95 0.709, P 0.882, R 0.889. Monitored by auto-recovering watchdog on 360 WSL. |
+| Stage 1 Deliverable | `models/yolo26_stage1_body_head_face_m3.pt` | ✅ **Trained (v1).** Achieved mAP50 0.696 on 16k full test split. |
+| Stage 1 v2 Model (yolo26m) | `models/yolo26m_stage1_v2_finetuned_ep15.pt` | ✅ **Trained (v2 deliverable).** Reached Epoch 75 + 15 fine-tuning epochs: mAP50 0.9441, mAP50-95 0.7300, P 0.8897, R 0.9001 on full validation set. Benchmarked locally on MPS (Face mAP50 0.9502, Head mAP50 0.9055). |
 | Model Benchmarks | `src/eval/`, `scripts/eval/benchmark_faces.py` | ✅ **Fully working.** Multi-model comparative benchmark for faces and heads (Catnip vs Fuyucchi, zymk9, DeepGHS). |
 | Remote Eval Runner | `scripts/colab/remote_eval_runner.py`, `launch_eval_360.sh` | ✅ **Fully working.** Automated headless evaluation runner driven via 360 WSL / Colab CLI syncing artifacts to R2. v2 knobs: `CATNIP_EVAL_MODEL_KEY`, `CATNIP_EVAL_RESULTS_PREFIX`, `CATNIP_REPO_BRANCH` (defaults keep the v1 flow). |
 | Presentation Notebook | `notebooks/catnipBenchmarkPresentation.ipynb` | ✅ **Fully working.** Light Mode presentation notebook with live 16k test metrics, domain breakdowns, and visual galleries. |
