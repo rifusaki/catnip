@@ -48,6 +48,7 @@ STAGE1_DATASET_KEY = os.environ.get(
     "CATNIP_STAGE1_DATASET_KEY", "compressed/stage1_v2_sliced.tar"
 )
 CHECKPOINT_RESUME_KEY = f"runs/{STAGE1_RUN_NAME}-last.pt"
+BEST_CHECKPOINT_KEY = f"runs/{STAGE1_RUN_NAME}-best.pt"
 
 # --- 1. Validate Environment & Credentials ---
 R2_ENDPOINT = os.environ.get(
@@ -205,6 +206,20 @@ print(f"[RemoteRunner] Patched dataset.yaml path -> {data['path']}")
 
 # --- 5. Inspect Checkpoint / Model Weights ---
 resume_ckpt_path = None
+weights_dir = LOCAL_DATA_ROOT / "runs" / "detect" / STAGE1_RUN_NAME / "weights"
+restored_best_pt = weights_dir / "best.pt"
+
+# Restore prior best.pt if saved in R2 so resumed runs never lose best weights
+try:
+    best_resp = s3.list_objects_v2(Bucket=BUCKET, Prefix=BEST_CHECKPOINT_KEY, MaxKeys=1)
+    if best_resp.get("KeyCount", 0) > 0:
+        weights_dir.mkdir(parents=True, exist_ok=True)
+        print(f"[RemoteRunner] Downloading prior best.pt from s3://{BUCKET}/{BEST_CHECKPOINT_KEY}...")
+        s3.download_file(BUCKET, BEST_CHECKPOINT_KEY, str(restored_best_pt))
+        print(f"[RemoteRunner] Prior best.pt restored ({restored_best_pt.stat().st_size / 1e6:.1f} MB).")
+except Exception as e:
+    print(f"[RemoteRunner] Note: Could not check/download best.pt: {e}")
+
 # Check if R2 has a rolling last.pt for this run to resume from
 try:
     resp = s3.list_objects_v2(Bucket=BUCKET, Prefix=CHECKPOINT_RESUME_KEY, MaxKeys=1)
@@ -215,6 +230,24 @@ try:
         print(f"[RemoteRunner] Checkpoint downloaded ({resume_ckpt_path.stat().st_size / 1e6:.1f} MB).")
 except Exception as e:
     print(f"[RemoteRunner] Note: Could not check/download resume checkpoint: {e}")
+
+if resume_ckpt_path is not None and resume_ckpt_path.exists():
+    # Guard against Ultralytics' silent Epoch-1 restart when given a finalized
+    # (optimizer-stripped, epoch=-1) checkpoint.
+    import torch
+    ckpt_meta = torch.load(str(resume_ckpt_path), map_location="cpu", weights_only=False)
+    is_finalized = (ckpt_meta.get("epoch", -1) == -1) or (ckpt_meta.get("optimizer") is None)
+    del ckpt_meta
+    if is_finalized:
+        source_final = restored_best_pt if restored_best_pt.exists() else resume_ckpt_path
+        print(
+            f"[RemoteRunner] Checkpoint {CHECKPOINT_RESUME_KEY} is already finalized "
+            f"(epoch=-1 / stripped optimizer). Refusing to overwrite with a fresh run; "
+            f"publishing {source_final.name} -> s3://{BUCKET}/models/{STAGE1_ARTIFACT}."
+        )
+        s3.upload_file(str(source_final), BUCKET, f"models/{STAGE1_ARTIFACT}")
+        print("[RemoteRunner] Finalized deliverable synchronized to R2. Done!")
+        sys.exit(0)
 
 if resume_ckpt_path is None or not resume_ckpt_path.exists():
     # Base weights are keyed by CATNIP_STAGE1_BASE_MODEL_KEY, not hardcoded.
@@ -235,18 +268,28 @@ else:
 stop_watcher = threading.Event()
 
 def checkpoint_watcher():
-    last_pt = LOCAL_DATA_ROOT / "runs" / "detect" / STAGE1_RUN_NAME / "weights" / "last.pt"
-    last_mtime = 0
+    last_pt = weights_dir / "last.pt"
+    best_pt_watch = weights_dir / "best.pt"
+    last_mtime = last_pt.stat().st_mtime if last_pt.exists() else 0
+    best_mtime = best_pt_watch.stat().st_mtime if best_pt_watch.exists() else 0
     while not stop_watcher.is_set():
-        if last_pt.exists():
+        for path, prev_mtime, key, label in (
+            (last_pt, last_mtime, CHECKPOINT_RESUME_KEY, "last.pt"),
+            (best_pt_watch, best_mtime, BEST_CHECKPOINT_KEY, "best.pt"),
+        ):
+            if not path.exists():
+                continue
             try:
-                mtime = last_pt.stat().st_mtime
-                if mtime > last_mtime:
-                    s3.upload_file(str(last_pt), BUCKET, CHECKPOINT_RESUME_KEY)
-                    print(f"\n[R2 Checkpoint] Pushed last.pt ({last_pt.stat().st_size / 1e6:.1f} MB) to s3://{BUCKET}/{CHECKPOINT_RESUME_KEY}")
-                    last_mtime = mtime
+                mtime = path.stat().st_mtime
+                if mtime > prev_mtime:
+                    s3.upload_file(str(path), BUCKET, key)
+                    print(f"\n[R2 Checkpoint] Pushed {label} ({path.stat().st_size / 1e6:.1f} MB) to s3://{BUCKET}/{key}")
+                    if label == "last.pt":
+                        last_mtime = mtime
+                    else:
+                        best_mtime = mtime
             except Exception as e:
-                print(f"\n[R2 Checkpoint Warning] Failed to push checkpoint: {e}")
+                print(f"\n[R2 Checkpoint Warning] Failed to push {label}: {e}")
         stop_watcher.wait(600)  # Check every 10 minutes
 
 watcher_thread = threading.Thread(target=checkpoint_watcher, daemon=True)
@@ -349,8 +392,11 @@ if polish_best.exists():
 elif (runs_dir / "weights" / "best.pt").exists():
     shutil.copy2(runs_dir / "weights" / "best.pt", best_pt)
     print(f"[RemoteRunner] Deliverable {STAGE1_ARTIFACT} produced by: main training (phase 1) — polish produced no best.pt.")
+elif (runs_dir / "weights" / "last.pt").exists():
+    shutil.copy2(runs_dir / "weights" / "last.pt", best_pt)
+    print(f"[RemoteRunner] Deliverable {STAGE1_ARTIFACT} produced by: main training (phase 1) — fell back to last.pt.")
 else:
-    print(f"[RemoteRunner] WARNING: no best.pt in either phase run dir; cannot package {STAGE1_ARTIFACT}.")
+    print(f"[RemoteRunner] WARNING: no best.pt or last.pt in either phase run dir; cannot package {STAGE1_ARTIFACT}.")
 
 if best_pt.exists():
     print(f"[RemoteRunner] Uploading best model to s3://{BUCKET}/models/{STAGE1_ARTIFACT}...")

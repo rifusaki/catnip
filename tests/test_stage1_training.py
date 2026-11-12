@@ -635,3 +635,30 @@ def test_patch_musgd_cublas_execution() -> None:
         assert out.dtype == t.dtype
 
 
+# ---------------------------------------------------------------------------
+# (g) save_best_model fallback for resumed ephemeral runs
+# ---------------------------------------------------------------------------
+
+def test_save_best_model_prefers_best_then_falls_back_to_last(tmp_path: Path) -> None:
+    from src.training.preparation import save_best_model
+
+    project_dir = tmp_path / "detect"
+    weights_dir = project_dir / "stage1_v2" / "weights"
+    weights_dir.mkdir(parents=True)
+    target_dir = tmp_path / "models"
+
+    # Both absent -> None
+    assert save_best_model(project_dir, "stage1_v2", target_dir, "out.pt") is None
+
+    # Only last.pt present (resumed VM didn't surpass prior best_fitness) -> falls back
+    (weights_dir / "last.pt").write_bytes(b"last-weights")
+    saved = save_best_model(project_dir, "stage1_v2", target_dir, "out.pt")
+    assert saved == target_dir / "out.pt"
+    assert saved.read_bytes() == b"last-weights"
+
+    # best.pt present -> prefers best.pt over last.pt
+    (weights_dir / "best.pt").write_bytes(b"best-weights")
+    saved = save_best_model(project_dir, "stage1_v2", target_dir, "out.pt")
+    assert saved.read_bytes() == b"best-weights"
+
+

@@ -201,23 +201,39 @@ def setup_stage1_data(manga_dir=None, labels_dir=None, stage1_dir=None):
 
 
 def save_best_model(project_dir, run_name, target_dir, target_name="best.pt"):
-    """
-    Saves the best model from the training run to a target directory.
+    """Saves the best model from the training run to a target directory.
+
+    Falls back to ``weights/last.pt`` when ``weights/best.pt`` is absent (for
+    example, when resuming on an ephemeral VM whose epochs did not surpass the
+    checkpoint's prior ``best_fitness``). Returns ``None`` if neither exists.
     """
     project_dir = Path(project_dir)
     target_dir = Path(target_dir)
-    
-    best_model_path = project_dir / run_name / "weights" / "best.pt"
+    weights_dir = project_dir / run_name / "weights"
+    best_model_path = weights_dir / "best.pt"
+    last_model_path = weights_dir / "last.pt"
     target_model_path = target_dir / target_name
 
     if best_model_path.exists():
-        target_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy(best_model_path, target_model_path)
-        logger.info("Model saved to %s", target_model_path)
-        return target_model_path
+        source_path = best_model_path
+    elif last_model_path.exists():
+        logger.warning(
+            "best.pt not found at %s (resumed run did not surpass prior best_fitness); falling back to %s",
+            best_model_path,
+            last_model_path,
+        )
+        source_path = last_model_path
     else:
-        logger.error("Training might have failed, best.pt not found at %s", best_model_path)
+        logger.error(
+            "Training might have failed, neither best.pt nor last.pt found in %s",
+            weights_dir,
+        )
         return None
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_path, target_model_path)
+    logger.info("Model saved to %s (from %s)", target_model_path, source_path.name)
+    return target_model_path
 
 
 def prepare_triplet_dataset(
