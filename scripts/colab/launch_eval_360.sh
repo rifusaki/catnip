@@ -112,7 +112,8 @@ for _knob in \
     CATNIP_REPO_BRANCH \
     CATNIP_EVAL_MODEL_KEY \
     CATNIP_EVAL_RESULTS_PREFIX \
-    CATNIP_EVAL_DATASET_KEY; do
+    CATNIP_EVAL_DATASET_KEY \
+    CATNIP_EVAL_USE_SAHI; do
     if [[ -n "${!_knob:-}" ]]; then
         printf 'os.environ["%s"] = "%s"\n' "$_knob" "${!_knob}" >> "$PAYLOAD_FILE"
     fi

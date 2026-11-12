@@ -266,6 +266,83 @@ class CatnipDetector(UltralyticsDetector):
         )
 
 
+class CatnipSahiDetector(BaseDetector):
+    """Catnip Stage 1 detector running the full SAHI extraction pipeline.
+
+    Applies dynamic panel/page resolution gating, Weighted Box Fusion (WBF),
+    calibrated per-class confidence thresholds (body=0.52, head=0.52, face=0.56),
+    and hierarchical anatomical containment filtering (face enclosed in head/body).
+    """
+
+    CATNIP_CLASSES: ClassVar[dict[str, int]] = {
+        "body": 0,
+        "head": 1,
+        "face": 2,
+    }
+
+    def __init__(
+        self,
+        model_path: Path | str,
+        target: str = "face",
+        device: str = "cpu",
+    ) -> None:
+        norm_target = target.lower().strip()
+        if norm_target not in self.CATNIP_CLASSES:
+            raise ValueError(
+                f"Invalid Catnip evaluation target '{target}'. Expected one of {list(self.CATNIP_CLASSES.keys())}"
+            )
+
+        super().__init__(
+            name="Catnip-SAHI",
+            architecture="YOLO26m (SAHI + WBF + Anatomy Gate)",
+            device=device,
+        )
+        self.model_path = Path(model_path)
+        if not self.model_path.exists():
+            raise FileNotFoundError(f"Model checkpoint not found: {self.model_path}")
+        self.weight_size_bytes = self.model_path.stat().st_size
+        self.target = norm_target
+
+        from src.detection.sahi_extractor import SahiExtractor
+
+        self.extractor = SahiExtractor(
+            model_path=str(self.model_path),
+            device=device,
+        )
+        try:
+            self.parameter_count = sum(
+                p.numel() for p in self.extractor._detection_model.model.model.parameters()
+            )
+        except Exception:
+            self.parameter_count = 0
+
+        logger.info(
+            "Catnip-SAHI detector initialized for target '%s' with full WBF + anatomy containment",
+            self.target,
+        )
+
+    def predict(self, image: np.ndarray, conf: float = 0.3) -> list[Detection]:
+        h, w = image.shape[:2]
+        if h == 0 or w == 0:
+            return []
+
+        parts = self.extractor.extract_from_image(image)
+        detections: list[Detection] = []
+        for part in parts:
+            if part.class_name == self.target:
+                detections.append(
+                    Detection(
+                        x1=float(np.clip(part.x1 / w, 0.0, 1.0)),
+                        y1=float(np.clip(part.y1 / h, 0.0, 1.0)),
+                        x2=float(np.clip(part.x2 / w, 0.0, 1.0)),
+                        y2=float(np.clip(part.y2 / h, 0.0, 1.0)),
+                        score=float(part.score),
+                        class_id=0,
+                    )
+                )
+        return detections
+
+
 # ============================================================================
 # Legacy YOLOv5 Adapter (zymk9)
 # ============================================================================
@@ -402,19 +479,24 @@ def get_detector(
     """Factory creating an initialized detector instance by model name or key."""
     norm_name = name.lower().strip()
 
-    # Case 1: Catnip Stage 1 model
-    if norm_name in ("catnip", "catnip-stage1", "catnip_stage1", "catnip_nano"):
+    # Case 1: Catnip Stage 1 model (raw or SAHI pipeline)
+    if norm_name in ("catnip", "catnip-stage1", "catnip_stage1", "catnip_nano", "catnip_sahi", "catnip-sahi", "catnip_stage1_sahi", "sahi"):
         if custom_path is None:
             from src.config import settings
 
             candidates = [
                 # 1. Full training deliverable (Colab / production run)
+                settings.paths.model_dir / "yolo26m_stage1_v2.pt",
                 settings.paths.model_dir / "yolo26_stage1_body_head_face.pt",
                 # 2. Raw best weights from full training run
+                settings.paths.runs_dir / "detect" / "stage1_v2" / "weights" / "best.pt",
                 settings.paths.runs_dir / "detect" / "stage1" / "weights" / "best.pt",
                 # 3. Last rolling checkpoint from full training run
+                settings.paths.runs_dir / "detect" / "stage1_v2" / "weights" / "last.pt",
                 settings.paths.runs_dir / "detect" / "stage1" / "weights" / "last.pt",
-                # 4. Local repository models directory (full model)
+                # 4. Local repository models directory (v2 deliverable / full model)
+                REPO_ROOT / "models" / "yolo26m_stage1_v2_finetuned_ep15.pt",
+                REPO_ROOT / "models" / "yolo26m_stage1_v2.pt",
                 REPO_ROOT / "models" / "yolo26_stage1_body_head_face.pt",
                 # 5. Local repository models directory (M3 subset baseline deliverable)
                 REPO_ROOT / "models" / "yolo26_stage1_body_head_face_m3.pt",
@@ -432,6 +514,8 @@ def get_detector(
                 )
             custom_path = found
 
+        if "sahi" in norm_name:
+            return CatnipSahiDetector(model_path=custom_path, target=target, device=device)
         return CatnipDetector(model_path=custom_path, target=target, device=device)
 
     # Case 2: Standard Benchmark Catalog Models

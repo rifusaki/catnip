@@ -33,10 +33,11 @@ EVAL_DEVICE = os.environ.get("CATNIP_EVAL_DEVICE", "cuda")
 # models/yolo26m_stage1_v2.pt). CATNIP_EVAL_RESULTS_PREFIX: R2 prefix for
 # the synced artifacts. CATNIP_REPO_BRANCH: repo branch cloned on the VM.
 TRAINED_MODEL_KEY = os.environ.get(
-    "CATNIP_EVAL_MODEL_KEY", "models/yolo26_stage1_body_head_face.pt"
+    "CATNIP_EVAL_MODEL_KEY", "models/yolo26m_stage1_v2.pt"
 )
 RESULTS_PREFIX = os.environ.get("CATNIP_EVAL_RESULTS_PREFIX", "results/benchmarks")
 REPO_BRANCH = os.environ.get("CATNIP_REPO_BRANCH", "main")
+USE_SAHI = os.environ.get("CATNIP_EVAL_USE_SAHI", "0").lower() in ("1", "true")
 
 if os.environ.get("CUDA_VISIBLE_DEVICES") == "cuda":
     del os.environ["CUDA_VISIBLE_DEVICES"]
@@ -254,6 +255,8 @@ for target, models in EVAL_TARGETS:
         "--sample", EVAL_SAMPLE,
         "--output-dir", str(output_dir),
     ]
+    if USE_SAHI:
+        cmd.append("--sahi")
     print(f"[RemoteEval] Launching {target} benchmark: {' '.join(cmd)}")
     sys.stdout.flush()
 

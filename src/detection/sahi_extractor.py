@@ -554,10 +554,33 @@ class SahiExtractor:
                 device=device,
             )
 
-    def extract_from_image(self, image_path: str | Path) -> list[DetectedPart]:
-        """Detect parts on one image; fused detections in original pixels."""
-        image_rgb = self._read_image_rgb(image_path)
+    def extract_from_image(
+        self, image_input: str | Path | np.ndarray
+    ) -> list[DetectedPart]:
+        """Detect parts on one image; fused detections in original pixels.
+
+        Accepts either a file path (str or Path) or an image array (np.ndarray).
+        """
+        if isinstance(image_input, (str, Path)):
+            image_rgb = self._read_image_rgb(image_input)
+        elif isinstance(image_input, np.ndarray):
+            if image_input.ndim == 2:
+                image_rgb = cv2.cvtColor(image_input, cv2.COLOR_GRAY2RGB)
+            elif image_input.ndim == 3 and image_input.shape[2] == 3:
+                # Standard OpenCV cv2.imread produces BGR; convert to RGB
+                image_rgb = cv2.cvtColor(image_input, cv2.COLOR_BGR2RGB)
+            elif image_input.ndim == 3 and image_input.shape[2] == 4:
+                image_rgb = cv2.cvtColor(image_input, cv2.COLOR_BGRA2RGB)
+            else:
+                image_rgb = image_input
+        else:
+            raise TypeError(
+                f"Expected str, Path, or np.ndarray, got {type(image_input)!r}"
+            )
+
         height, width = image_rgb.shape[:2]
+        if height == 0 or width == 0:
+            return []
 
         route = decide_gate(height, width, self.params.panel_max_dim)
         if route == GATE_PANEL:

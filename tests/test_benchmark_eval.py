@@ -305,3 +305,21 @@ def test_parse_yolo_label(tmp_path: Path) -> None:
     assert b.x2 == pytest.approx(0.6)
     assert b.y2 == pytest.approx(0.7)
     assert b.score == 1.0
+
+
+def test_get_detector_catnip_sahi_resolves_to_sahi_detector(
+    tiny_yolo_checkpoint: Path,
+) -> None:
+    """catnip_sahi resolves to working CatnipSahiDetector with full SAHI extractor."""
+    from src.eval.adapters import CatnipSahiDetector
+
+    detector = get_detector("catnip_sahi", target="face", custom_path=tiny_yolo_checkpoint)
+    assert isinstance(detector, CatnipSahiDetector)
+    assert detector.target == "face"
+    assert detector.name == "Catnip-SAHI"
+
+    # Predict on synthetic test image
+    test_img = np.zeros((640, 640, 3), dtype=np.uint8)
+    preds = detector.predict(test_img)
+    assert isinstance(preds, list)
+

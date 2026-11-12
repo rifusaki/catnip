@@ -89,6 +89,11 @@ def parse_args() -> argparse.Namespace:
         help="Path to Catnip Stage 1 checkpoint (.pt)",
     )
     parser.add_argument(
+        "--sahi",
+        action="store_true",
+        help="Evaluate Catnip via full SAHI pipeline (WBF, calibrated thresholds, anatomical containment)",
+    )
+    parser.add_argument(
         "--dataset-yaml",
         type=Path,
         default=None,
@@ -320,13 +325,16 @@ def main() -> None:
     logger.info("Benchmarking target '%s' on compute device '%s'", args.target, device)
 
     # 3. Model list resolution (dynamically driven by --target to prevent target mismatch)
+    default_catnip = "catnip_sahi" if args.sahi else "catnip"
     if not args.models or args.models in ("auto", "all"):
         if args.target == "face":
-            model_keys = ["catnip", "fuyucchi_face", "zymk9_face", "deepghs_face_nano"]
+            model_keys = [default_catnip, "fuyucchi_face", "zymk9_face", "deepghs_face_nano"]
         else:
-            model_keys = ["catnip", "deepghs_head_nano"]
+            model_keys = [default_catnip, "deepghs_head_nano"]
     else:
         model_keys = [k.strip() for k in args.models.split(",") if k.strip()]
+        if args.sahi:
+            model_keys = ["catnip_sahi" if k == "catnip" else k for k in model_keys]
 
     # 4. Initialize detectors
     detectors: dict[str, BaseDetector] = {}
